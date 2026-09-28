@@ -12,6 +12,7 @@ const routes = [
   { path: '/clients', redirect: '/' },
   { path: '/config', component: () => import('./Config.vue') },
   { path: '/displays', component: () => import('./Displays.vue') },
+  { path: '/quality', component: () => import('./Quality.vue') },
   { path: '/featured', component: () => import('./Featured.vue') },
   { path: '/logout', component: () => import('./Logout.vue') },
   { path: '/password', component: () => import('./Password.vue') },

@@ -30,6 +30,12 @@
               </RouterLink>
             </li>
             <li class="nav-item">
+              <RouterLink class="nav-link" to="/quality">
+                <Gauge :size="18" class="icon"></Gauge>
+                {{ $t('navbar.quality') }}
+              </RouterLink>
+            </li>
+            <li class="nav-item">
               <RouterLink class="nav-link" to="/apps">
                 <Layers :size="18" class="icon"></Layers>
                 {{ $t('navbar.applications') }}
@@ -88,7 +94,7 @@
 </template>
 
 <script>
-import { CircleUserRound, Home, Info, Layers, Lock, LogOut, Monitor, Settings, Shield, Star } from '@lucide/vue'
+import { CircleUserRound, Gauge, Home, Info, Layers, Lock, LogOut, Monitor, Settings, Shield, Star } from '@lucide/vue'
 import ThemeToggle from './ThemeToggle.vue'
 import DiliLogo from './DiliLogo.vue'
 import Notification from './Notification.vue'
@@ -107,7 +113,8 @@ export default {
     Info,
     CircleUserRound,
     LogOut,
-    Monitor
+    Monitor,
+    Gauge
   },
   methods: {
     logout() {
