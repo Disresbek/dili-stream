@@ -4,11 +4,26 @@
  */
 // local includes
 #include "pipewire.cpp"
+#include "src/config.h"
 #include "src/globals.h"
+
+// standard includes
+#include <array>
+#include <cmath>
+#include <cstdio>
+#include <optional>
+#include <fstream>
+#include <mutex>
+#include <set>
+#include <thread>
+
+// lib includes
+#include <nlohmann/json.hpp>
 
 namespace {
   // Portal configuration constants
   constexpr uint32_t SOURCE_TYPE_MONITOR = 1;
+  constexpr uint32_t SOURCE_TYPE_VIRTUAL = 4;
   constexpr uint32_t CURSOR_MODE_EMBEDDED = 2;
 
   constexpr uint32_t PERSIST_FORGET = 0;
@@ -33,6 +48,401 @@ namespace {
 using namespace std::literals;
 
 namespace portal {
+  /**
+   * @brief Virtual display support (Apollo-style) for KDE Plasma.
+   *
+   * Enabled by setting output_name = virtual in sunshine.conf.
+   * The portal then creates a new virtual screen for every stream instead of
+   * capturing an existing monitor. Afterwards the screen is switched to the
+   * client's resolution and refresh rate with kscreen-doctor (custom modes).
+   */
+  namespace virtual_display {
+    /**
+     * @brief A display mode of a KDE output.
+     */
+    struct display_mode_t {
+      std::string id;  ///< kscreen mode id.
+      int width = 0;  ///< Width in pixels.
+      int height = 0;  ///< Height in pixels.
+      double hz = 0;  ///< Refresh rate in Hz.
+    };
+
+    /**
+     * @brief A KDE output as reported by kscreen-doctor.
+     */
+    struct output_t {
+      int id = 0;  ///< kscreen output id (only valid within one kscreen-doctor run).
+      std::string name;  ///< Connector name.
+      std::string uuid;  ///< Stable output uuid, if reported.
+      int priority = 0;  ///< 1 = main screen.
+      std::string current_mode;  ///< Active mode id.
+      std::vector<display_mode_t> modes;  ///< Available modes.
+
+      /**
+       * @brief How to address this output in a kscreen-doctor command.
+       *
+       * kscreen-doctor splits commands at dots, so names containing dots (like the
+       * portal's "Virtual-virtual-xdp-kde-org.kde...") cannot be used directly.
+       */
+      std::string selector() const {
+        if (name.find('.') == std::string::npos && !name.empty()) {
+          return name;
+        }
+        if (!uuid.empty()) {
+          return uuid;
+        }
+        return std::to_string(id);
+      }
+    };
+
+    /**
+     * @brief Whether virtual display mode is enabled in the configuration.
+     */
+    inline bool enabled() {
+      return config::video.output_name == "virtual";
+    }
+
+    /**
+     * @brief Prefix needed to run a command on the host (Flatpak, distrobox or native).
+     */
+    inline std::string host_prefix() {
+      std::error_code ec;
+      if (std::filesystem::exists("/.flatpak-info", ec)) {
+        return "flatpak-spawn --host ";
+      }
+      if (std::getenv("CONTAINER_ID") && std::filesystem::exists("/usr/bin/distrobox-host-exec", ec)) {
+        return "distrobox-host-exec ";
+      }
+      return "";
+    }
+
+    /**
+     * @brief Environment kscreen-doctor needs to reach the KDE session.
+     *
+     * Commands started through distrobox-host-exec or flatpak-spawn do not inherit the
+     * Wayland session variables, so Qt would fall back to X11 and fail.
+     */
+    inline std::string host_env() {
+      std::string env = "env QT_QPA_PLATFORM=wayland";
+      for (const char *var : {"WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"}) {
+        if (const char *value = std::getenv(var)) {
+          env += std::format(" {}={}", var, value);
+        }
+      }
+      return env + " ";
+    }
+
+    /**
+     * @brief Run a command on the host (inside the KDE session) and return its output.
+     */
+    inline std::string run_host(const std::string &command) {
+      const std::string cmd = host_prefix() + host_env() + command + " 2>/dev/null";
+      BOOST_LOG(debug) << "[virtual_display] Running: "sv << cmd;
+      std::string out;
+      FILE *pipe = popen(cmd.c_str(), "r");
+      if (!pipe) {
+        BOOST_LOG(error) << "[virtual_display] Could not run kscreen-doctor"sv;
+        return out;
+      }
+      std::array<char, 4096> buf {};
+      while (fgets(buf.data(), static_cast<int>(buf.size()), pipe)) {
+        out += buf.data();
+      }
+      pclose(pipe);
+      return out;
+    }
+
+    /**
+     * @brief Run kscreen-doctor on the host and return its output.
+     */
+    inline std::string kscreen(const std::string &args) {
+      return run_host("kscreen-doctor " + args);
+    }
+
+    constexpr const char *KWIN_SCRIPT_NAME = "sunshine_virtual_display";
+
+    /**
+     * @brief KWin script that moves windows onto the virtual screen while it exists.
+     *
+     * New windows, and windows you switch to (for example Steam when it is already open),
+     * are sent to the streamed screen, so they are always visible on the device.
+     */
+    constexpr const char *KWIN_SCRIPT = R"js(
+// Sunshine virtual display: keep windows on the streamed screen.
+function virtualOutput() {
+  const screens = workspace.screens;
+  for (let i = 0; i < screens.length; i++) {
+    if (screens[i].name.startsWith("Virtual-")) {
+      return screens[i];
+    }
+  }
+  return null;
+}
+
+function eligible(window) {
+  // Skip panels, notifications, popups, dialogs attached to another window, etc.
+  return window && !window.specialWindow && !window.transient && !window.popupWindow;
+}
+
+function moveToVirtual(window) {
+  if (!eligible(window)) {
+    return;
+  }
+  const output = virtualOutput();
+  if (!output || window.output === output) {
+    return;
+  }
+  // Safety net: never fight an application forever
+  window.sunshineMoves = (window.sunshineMoves || 0) + 1;
+  if (window.sunshineMoves > 10) {
+    return;
+  }
+  print("sunshine: moving '" + window.caption + "' to " + output.name);
+  workspace.sendClientToScreen(window, output);
+}
+
+function watch(window) {
+  if (!eligible(window) || window.sunshineWatched) {
+    return;
+  }
+  window.sunshineWatched = true;
+  // Games and Steam Big Picture often switch to fullscreen, or jump to another screen,
+  // right after they appear. Catch that and move them back.
+  window.fullScreenChanged.connect(function () { moveToVirtual(window); });
+  window.outputChanged.connect(function () { moveToVirtual(window); });
+  window.captionChanged.connect(function () { moveToVirtual(window); });
+}
+
+function handle(window) {
+  watch(window);
+  moveToVirtual(window);
+}
+
+workspace.windowAdded.connect(handle);
+workspace.windowActivated.connect(handle);
+
+// Windows that already exist (like Steam running in the background) are watched too
+const existing = workspace.windowList();
+for (let i = 0; i < existing.length; i++) {
+  watch(existing[i]);
+}
+)js";
+
+    /**
+     * @brief Load the window-moving KWin script.
+     */
+    inline void load_window_script() {
+      const auto dir = std::filesystem::path(std::getenv("HOME") ? std::getenv("HOME") : "/tmp") / ".local/share/sunshine";
+      std::error_code ec;
+      std::filesystem::create_directories(dir, ec);
+      const auto path = dir / "virtual_display_windows.js";
+      {
+        std::ofstream file(path);
+        file << KWIN_SCRIPT;
+      }
+      const std::string dbus = "dbus-send --session --print-reply --dest=org.kde.KWin /Scripting ";
+      run_host(dbus + "org.kde.kwin.Scripting.unloadScript string:" + KWIN_SCRIPT_NAME);
+      run_host(dbus + "org.kde.kwin.Scripting.loadScript string:" + path.string() + " string:" + KWIN_SCRIPT_NAME);
+      run_host(dbus + "org.kde.kwin.Scripting.start");
+      BOOST_LOG(info) << "[virtual_display] New windows will open on the virtual screen"sv;
+    }
+
+    /**
+     * @brief Unload the window-moving KWin script.
+     */
+    inline void unload_window_script() {
+      run_host(std::string("dbus-send --session --print-reply --dest=org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript string:") + KWIN_SCRIPT_NAME);
+    }
+
+    /**
+     * @brief Read all outputs from KDE.
+     */
+    inline std::vector<output_t> read_outputs() {
+      std::vector<output_t> result;
+      const auto text = kscreen("-j");
+      try {
+        auto json = nlohmann::json::parse(text);
+        for (const auto &o : json.at("outputs")) {
+          output_t out;
+          out.id = o.value("id", 0);
+          out.name = o.value("name", "");
+          out.uuid = o.value("uuid", "");
+          out.priority = o.value("priority", 0);
+          if (o.contains("currentModeId")) {
+            const auto &cm = o.at("currentModeId");
+            out.current_mode = cm.is_string() ? cm.get<std::string>() : cm.dump();
+          }
+          for (const auto &m : o.value("modes", nlohmann::json::array())) {
+            display_mode_t mode;
+            const auto &mid = m.at("id");
+            mode.id = mid.is_string() ? mid.get<std::string>() : mid.dump();
+            mode.width = m.at("size").value("width", 0);
+            mode.height = m.at("size").value("height", 0);
+            mode.hz = m.value("refreshRate", 0.0);
+            out.modes.push_back(mode);
+          }
+          result.push_back(out);
+        }
+      } catch (const std::exception &e) {
+        BOOST_LOG(error) << "[virtual_display] Could not read kscreen-doctor output: "sv << e.what();
+        BOOST_LOG(error) << "[virtual_display] Raw output (first 200 characters): '"sv << text.substr(0, 200) << "'"sv;
+      }
+      return result;
+    }
+
+    /**
+     * @brief Find the mode closest to what the client asked for.
+     *
+     * KDE may round the width to a multiple of 8, so a few pixels difference is accepted.
+     */
+    inline std::optional<display_mode_t> find_mode(const output_t &out, int width, int height, int fps) {
+      std::optional<display_mode_t> best;
+      for (const auto &m : out.modes) {
+        if (m.height != height || std::abs(m.width - width) > 8) {
+          continue;
+        }
+        if (!best || std::abs(m.hz - fps) < std::abs(best->hz - fps)) {
+          best = m;
+        }
+      }
+      if (best && std::abs(best->hz - fps) < 1.0) {
+        return best;
+      }
+      return std::nullopt;
+    }
+
+    /**
+     * @brief Ids of all outputs that currently exist.
+     */
+    inline std::set<int> output_ids() {
+      std::set<int> ids;
+      for (const auto &o : read_outputs()) {
+        ids.insert(o.id);
+      }
+      return ids;
+    }
+
+    /**
+     * @brief State needed to undo our changes when the stream ends.
+     */
+    struct session_t {
+      std::string output;  ///< Selector of our virtual output.
+      std::string previous_primary;  ///< Selector of the output that was the main screen before.
+      int width = 0;  ///< Final width.
+      int height = 0;  ///< Final height.
+      bool made_primary = false;  ///< Whether we made the virtual screen the main screen.
+    };
+
+    /**
+     * @brief Find the new virtual output and switch it to the client's mode.
+     *
+     * @return The session state, or nullopt when no new virtual output was found.
+     */
+    inline std::optional<session_t> apply(int width, int height, int fps) {
+      std::optional<output_t> target;
+      std::string previous_primary;
+      int best_priority = 0;
+      // Wait up to 2 seconds for KDE to report the new screen
+      for (int attempt = 0; attempt < 20 && !target; ++attempt) {
+        const auto outputs = read_outputs();
+        if (outputs.empty()) {
+          // kscreen-doctor is not working at all, waiting longer will not help
+          BOOST_LOG(warning) << "[virtual_display] kscreen-doctor returned nothing, skipping resolution matching"sv;
+          return std::nullopt;
+        }
+        for (const auto &o : outputs) {
+          // Remember the physical screen with the highest rank (lowest priority number)
+          if (!o.name.starts_with("Virtual-") && o.priority > 0 && (best_priority == 0 || o.priority < best_priority)) {
+            best_priority = o.priority;
+            previous_primary = o.selector();
+          }
+          // Screens created by the portal are called "Virtual-virtual-xdp-..."
+          if (o.name.starts_with("Virtual-") && o.name.find("xdp") != std::string::npos) {
+            target = o;
+          }
+        }
+        if (!target) {
+          std::this_thread::sleep_for(100ms);
+        }
+      }
+      if (!target) {
+        BOOST_LOG(warning) << "[virtual_display] No new virtual screen found"sv;
+        return std::nullopt;
+      }
+      const auto id = target->selector();
+      BOOST_LOG(info) << "[virtual_display] Virtual screen '"sv << target->name << "' (id "sv << id << "), client wants "sv << width << "x"sv << height << " at "sv << fps << " Hz"sv;
+
+      // Reuse a matching mode, or add a custom one (any refresh rate works this way)
+      auto mode = find_mode(*target, width, height, fps);
+      if (!mode) {
+        kscreen(std::format("output.{}.addCustomMode.{}.{}.{}.full", id, width, height, fps * 1000));
+        for (const auto &o : read_outputs()) {
+          if (o.name == target->name) {
+            target = o;
+          }
+        }
+        mode = find_mode(*target, width, height, fps);
+      }
+
+      session_t session {.output = id, .previous_primary = previous_primary, .width = width, .height = height};
+      if (mode) {
+        if (mode->id != target->current_mode) {
+          kscreen(std::format("output.{}.mode.{}", id, mode->id));
+          // Wait until KDE really runs the new mode, so the capture starts at the right size
+          for (int attempt = 0; attempt < 15; ++attempt) {
+            bool applied = false;
+            for (const auto &o : read_outputs()) {
+              if (o.name == target->name && o.current_mode == mode->id) {
+                applied = true;
+              }
+            }
+            if (applied) {
+              break;
+            }
+            std::this_thread::sleep_for(100ms);
+          }
+        }
+        session.width = mode->width;
+        session.height = mode->height;
+        BOOST_LOG(info) << "[virtual_display] Running at "sv << mode->width << "x"sv << mode->height << " at "sv << mode->hz << " Hz"sv;
+      } else {
+        BOOST_LOG(warning) << "[virtual_display] Could not create a matching mode, keeping KDE's default"sv;
+        for (const auto &m : target->modes) {
+          if (m.id == target->current_mode) {
+            session.width = m.width;
+            session.height = m.height;
+          }
+        }
+      }
+
+      if (config::video.virtual_display_primary) {
+        // Setting on: make it the main screen so games and new windows open there
+        if (target->priority != 1) {
+          kscreen(std::format("output.{}.priority.1", id));
+        }
+        session.made_primary = true;
+        BOOST_LOG(info) << "[virtual_display] Virtual screen is now the main screen"sv;
+      } else if (target->priority == 1 && !previous_primary.empty()) {
+        // Setting off, but KDE remembered an older "main screen" choice: give it back to the monitor
+        kscreen(std::format("output.{}.priority.1", previous_primary));
+        BOOST_LOG(info) << "[virtual_display] Keeping '"sv << previous_primary << "' as the main screen"sv;
+      }
+
+      // Give KWin a moment to settle before PipeWire negotiates the stream
+      std::this_thread::sleep_for(300ms);
+      return session;
+    }
+
+    /**
+     * @brief Give the main screen back to the monitor that had it before.
+     */
+    inline void restore(const session_t &session) {
+      if (session.made_primary && !session.previous_primary.empty() && session.previous_primary != session.output) {
+        kscreen(std::format("output.{}.priority.1", session.previous_primary));
+        BOOST_LOG(info) << "[virtual_display] Main screen restored"sv;
+      }
+    }
+  }  // namespace virtual_display
   // Forward declarations
   class runtime_t;
 
@@ -455,8 +865,17 @@ namespace portal {
       return false;
     }
 
+    /**
+     * @brief Open a new PipeWire connection for an already running portal session.
+     *
+     * @return 0 on success; negative on failure.
+     */
+    int reopen_pipewire_remote() {
+      return open_pipewire_remote(session_handle.c_str(), pipewire_fd);
+    }
+
     std::vector<pipewire_streaminfo_t> pipewire_streams;  ///< Pipewire streams.
-    int pipewire_fd;  ///< Pipewire fd.
+    int pipewire_fd = -1;  ///< Pipewire fd.
 
   private:
     GDBusConnection *conn;
@@ -586,9 +1005,11 @@ namespace portal {
       g_variant_builder_add(&builder, "o", session_path);
       g_variant_builder_open(&builder, G_VARIANT_TYPE("a{sv}"));
       g_variant_builder_add(&builder, "{sv}", "handle_token", g_variant_new_string(request_token));
-      g_variant_builder_add(&builder, "{sv}", "types", g_variant_new_uint32(SOURCE_TYPE_MONITOR));
+      // Virtual display mode: ask the portal for a new virtual screen instead of an existing monitor
+      const bool virtual_mode = virtual_display::enabled();
+      g_variant_builder_add(&builder, "{sv}", "types", g_variant_new_uint32(virtual_mode ? SOURCE_TYPE_VIRTUAL : SOURCE_TYPE_MONITOR));
       g_variant_builder_add(&builder, "{sv}", "cursor_mode", g_variant_new_uint32(CURSOR_MODE_EMBEDDED));
-      g_variant_builder_add(&builder, "{sv}", "multiple", g_variant_new_boolean(TRUE));
+      g_variant_builder_add(&builder, "{sv}", "multiple", g_variant_new_boolean(virtual_mode ? FALSE : TRUE));
       if (persist) {
         g_variant_builder_add(&builder, "{sv}", "persist_mode", g_variant_new_uint32(PERSIST_UNTIL_REVOKED));
         if (!restore_token_t::empty()) {
@@ -919,17 +1340,128 @@ namespace portal {
   };
 
   /**
+   * @brief One virtual screen shared by all captures.
+   *
+   * Sunshine opens a capture for every encoder test at startup and again for the real
+   * stream. Sharing one portal session means one virtual screen (and one KDE notification)
+   * instead of a new one every time. It is closed a few seconds after the last capture ends.
+   */
+  struct shared_virtual_t {
+    std::mutex mutex;  ///< Protects all fields.
+    std::shared_ptr<dbus_t> dbus;  ///< Open portal session, if any.
+    std::optional<virtual_display::session_t> vd;  ///< Current virtual screen state.
+    int users = 0;  ///< Captures currently using the session.
+    bool script_loaded = false;  ///< Whether the window-moving KWin script is active.
+    uint64_t generation = 0;  ///< Changes on every acquire, to cancel pending releases.
+  };
+
+  inline shared_virtual_t &shared_virtual() {
+    // Intentionally never destroyed: KDE closes the session itself when Sunshine exits
+    static auto *state = new shared_virtual_t;
+    return *state;
+  }
+
+  /**
+   * @brief Get the shared session, creating it (and the virtual screen) if needed.
+   */
+  inline std::shared_ptr<dbus_t> acquire_virtual_session() {
+    auto &sv = shared_virtual();
+    std::lock_guard lock(sv.mutex);
+    if (sv.dbus && !sv.dbus->is_session_closed()) {
+      if (sv.dbus->reopen_pipewire_remote() < 0) {
+        return nullptr;
+      }
+      BOOST_LOG(debug) << "[virtual_display] Reusing existing virtual screen"sv;
+    } else {
+      sv.dbus.reset();
+      sv.vd.reset();
+      auto dbus = std::make_shared<dbus_t>();
+      if (dbus->init() < 0 || dbus->connect_to_portal(false) < 0 || dbus->pipewire_streams.empty()) {
+        return nullptr;
+      }
+      sv.dbus = dbus;
+    }
+    sv.users++;
+    sv.generation++;
+    return sv.dbus;
+  }
+
+  /**
+   * @brief Stop using the shared session; close it after a short grace period.
+   */
+  inline void release_virtual_session() {
+    auto &sv = shared_virtual();
+    uint64_t generation;
+    {
+      std::lock_guard lock(sv.mutex);
+      if (--sv.users > 0) {
+        return;
+      }
+      generation = sv.generation;
+    }
+    std::thread([generation]() {
+      std::this_thread::sleep_for(8s);
+      auto &sv = shared_virtual();
+      std::lock_guard lock(sv.mutex);
+      if (sv.users > 0 || sv.generation != generation) {
+        return;  // Someone started using it again
+      }
+      if (sv.script_loaded) {
+        virtual_display::unload_window_script();
+        sv.script_loaded = false;
+      }
+      if (sv.vd) {
+        virtual_display::restore(*sv.vd);
+      }
+      sv.vd.reset();
+      sv.dbus.reset();  // Closes the portal session, KDE removes the virtual screen
+      BOOST_LOG(info) << "[virtual_display] Virtual screen removed"sv;
+    }).detach();
+  }
+
+  /**
    * @brief Portal screencast backend that negotiates PipeWire streams over DBus.
    */
   class portal_t: public pipewire::pipewire_display_t {
   public:
+    ~portal_t() override {
+      if (shared_dbus) {
+        shared_dbus.reset();
+        release_virtual_session();
+      }
+    }
+
+    /**
+     * @brief The portal session in use: the shared virtual one, or our own.
+     */
+    dbus_t &session() {
+      return shared_dbus ? *shared_dbus : dbus;
+    }
+
+    /**
+     * @brief Remember what the client asked for, then run the normal PipeWire setup.
+     */
+    int init(platf::mem_type_e hwdevice_type, const std::string &display_name, const ::video::config_t &config) {
+      requested_width = config.width;
+      requested_height = config.height;
+      requested_fps = config.framerate;
+      return pipewire::pipewire_display_t::init(hwdevice_type, display_name, config);
+    }
+
     int configure_stream(const std::string &display_name, int &out_pipewire_fd, uint32_t &out_pipewire_node, uint64_t &out_pipewire_object_serial [[maybe_unused]]) override {
       // Connect DBus portal session
       if (dbus.init() < 0) {
         BOOST_LOG(error) << "[portalgrab] Failed to connect to dbus. portal_t setup failed.";
         return -1;
       }
-      if (dbus.connect_to_portal(false) < 0) {
+      const bool virtual_mode = virtual_display::enabled();
+      if (virtual_mode) {
+        shared_dbus = acquire_virtual_session();
+        if (!shared_dbus) {
+          BOOST_LOG(error) << "[portalgrab] Failed to create virtual screen. portal_t setup failed.";
+          return -1;
+        }
+      } else if (dbus.connect_to_portal(false) < 0) {
         BOOST_LOG(error) << "[portalgrab] Failed to connect to portal. portal_t setup failed.";
         return -1;
       }
@@ -937,7 +1469,7 @@ namespace portal {
       // Match display_name to a stream from the pipewire_streams vector
       bool use_fallback = true;
       pipewire_streaminfo_t stream;
-      auto streams = dbus.pipewire_streams;
+      auto streams = session().pipewire_streams;
       if (streams.empty()) {
         BOOST_LOG(error) << "[portalgrab] No streams found on portal. portal_t setup failed.";
         return -1;
@@ -952,14 +1484,39 @@ namespace portal {
       // Fall back to first stream if we cannot match the given display_name to a stream in currently available streams.
       if (use_fallback) {
         BOOST_LOG(info) << "[portalgrab] Using first available stream as no matching stream was found for: '"sv << display_name << "'";
-        stream = dbus.pipewire_streams.at(0);
+        stream = session().pipewire_streams.at(0);
+      }
+
+      // Virtual display mode: switch the new virtual screen to the client's resolution and refresh rate
+      if (virtual_mode) {
+        stream = session().pipewire_streams.at(0);
+        auto vd = virtual_display::apply(requested_width, requested_height, requested_fps);
+        if (vd) {
+          stream.width = vd->width;
+          stream.height = vd->height;
+          std::lock_guard lock(shared_virtual().mutex);
+          auto &shared = shared_virtual().vd;
+          // Keep the original main screen across reuses, so it is restored correctly at the end
+          if (shared && vd->previous_primary.empty()) {
+            vd->previous_primary = shared->previous_primary;
+          }
+          shared = vd;
+          if (!shared_virtual().script_loaded) {
+            virtual_display::load_window_script();
+            shared_virtual().script_loaded = true;
+          }
+        }
       }
 
       // Restore global maxframerate negotiation state
       pipewire.set_negotiate_maxframerate(negotiate_maxframerate.load());
 
       // Return values for pipewire init
-      out_pipewire_fd = dbus.pipewire_fd;
+      out_pipewire_fd = session().pipewire_fd;
+      if (shared_dbus) {
+        // PipeWire now owns this fd; make sure the shared session never closes it later
+        shared_dbus->pipewire_fd = -1;
+      }
       out_pipewire_node = stream.pipewire_node;
       out_pipewire_object_serial = stream.pipewire_object_serial;
       // Set/update basic stream parameters on display_t
@@ -981,7 +1538,7 @@ namespace portal {
      */
     bool check_stream_dead(platf::capture_e &out_status) override {
       // If the pipewire stream stopped due to closed portal session stop the capture with an error
-      if (dbus.is_session_closed()) {
+      if (session().is_session_closed()) {
         BOOST_LOG(warning) << "[portalgrab] PipeWire stream stopped by closed portal session."sv;
         pipewire.frame_cv().notify_all();
         out_status = platf::capture_e::error;
@@ -1000,6 +1557,12 @@ namespace portal {
 
     // DBus portal connection
     dbus_t dbus;  ///< DBus connection used for portal screencast requests.
+
+    // Virtual display state
+    int requested_width = 1920;  ///< Width requested by the client.
+    int requested_height = 1080;  ///< Height requested by the client.
+    int requested_fps = 60;  ///< Refresh rate requested by the client.
+    std::shared_ptr<dbus_t> shared_dbus;  ///< Shared virtual screen session, in virtual mode.
 
     // Class variable to store runtime state of maxFramerate negotiation
     static inline std::atomic<bool> negotiate_maxframerate {true};  ///< Whether portal negotiation should request the maximum frame rate.
@@ -1037,6 +1600,13 @@ namespace platf {
    * @return Portal display names, or an empty list when portal discovery fails.
    */
   std::vector<std::string> portal_display_names(bool allow_start_timeout) {
+    // Virtual display mode: there is nothing to enumerate. Opening a second portal session here
+    // would make KDE hand out the same virtual screen twice, and closing it again would pull the
+    // screen away from the running stream.
+    if (portal::virtual_display::enabled()) {
+      return {"virtual"};
+    }
+
     std::vector<std::string> display_names;
     auto dbus = std::make_shared<portal::dbus_t>();
 

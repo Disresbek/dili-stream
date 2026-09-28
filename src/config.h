@@ -220,6 +220,7 @@ namespace config {
 
     int max_bitrate;  ///< Maximum bitrate ceiling in kbps for bitrate requested from the client.
     double minimum_fps_target;  ///< Lowest framerate that will be used when streaming. Range 0-1000, 0 = half of client's requested framerate.
+    bool virtual_display_primary;  ///< Make the virtual display the main screen while streaming (output_name = virtual).
   };
 
   /**
