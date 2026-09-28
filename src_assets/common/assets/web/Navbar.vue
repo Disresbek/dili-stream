@@ -18,9 +18,9 @@
               </RouterLink>
             </li>
             <li class="nav-item">
-              <RouterLink class="nav-link" to="/pin">
+              <RouterLink class="nav-link" to="/devices">
                 <Lock :size="18" class="icon"></Lock>
-                {{ $t('navbar.pin') }}
+                {{ $t('navbar.devices') }}
               </RouterLink>
             </li>
             <li class="nav-item">

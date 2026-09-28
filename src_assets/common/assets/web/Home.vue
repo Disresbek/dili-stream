@@ -34,7 +34,7 @@
           <template v-else>Checking…</template>
         </div>
       </div>
-      <RouterLink class="dili-pill" to="/pin">Pair a device</RouterLink>
+      <RouterLink class="dili-pill" to="/devices">Pair a device</RouterLink>
     </section>
 
     <!-- Streaming now -->

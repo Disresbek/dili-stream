@@ -515,6 +515,7 @@
   "navbar": {
     "applications": "Applications",
     "configuration": "Advanced",
+    "devices": "Devices",
     "displays": "Displays",
     "featured": "Featured Apps",
     "home": "Home",
