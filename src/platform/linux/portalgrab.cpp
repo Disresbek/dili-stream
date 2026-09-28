@@ -168,7 +168,11 @@ namespace portal {
      * are sent to the streamed screen, so they are always visible on the device.
      */
     constexpr const char *KWIN_SCRIPT = R"js(
-// Sunshine virtual display: keep windows on the streamed screen.
+// Sunshine virtual display: keep the stream's windows on the streamed screen,
+// without taking windows away from someone using the PC at the same time.
+//
+// Rule: whatever is opened or clicked while the mouse pointer is on the streamed
+// screen belongs to the stream. Everything else stays where it is.
 function virtualOutput() {
   const screens = workspace.screens;
   for (let i = 0; i < screens.length; i++) {
@@ -179,53 +183,56 @@ function virtualOutput() {
   return null;
 }
 
+function pointerOn(output) {
+  const p = workspace.cursorPos;
+  const g = output.geometry;
+  return p.x >= g.x && p.x < g.x + g.width && p.y >= g.y && p.y < g.y + g.height;
+}
+
 function eligible(window) {
   // Skip panels, notifications, popups, dialogs attached to another window, etc.
   return window && !window.specialWindow && !window.transient && !window.popupWindow;
 }
 
-function moveToVirtual(window) {
+function bringBack(window) {
+  // Only for windows that belong to the stream: games and Steam Big Picture often
+  // jump to another screen when they switch to fullscreen. Move them back.
+  const output = virtualOutput();
+  if (!output || !window.sunshineStream || window.output === output) {
+    return;
+  }
+  window.sunshineMoves = (window.sunshineMoves || 0) + 1;
+  if (window.sunshineMoves > 10) {
+    return;  // Never fight an application forever
+  }
+  print("sunshine: bringing '" + window.caption + "' back to " + output.name);
+  workspace.sendClientToScreen(window, output);
+}
+
+function claim(window) {
   if (!eligible(window)) {
     return;
   }
   const output = virtualOutput();
-  if (!output || window.output === output) {
+  if (!output) {
     return;
   }
-  // Safety net: never fight an application forever
-  window.sunshineMoves = (window.sunshineMoves || 0) + 1;
-  if (window.sunshineMoves > 10) {
-    return;
+  if (!window.sunshineStream && !pointerOn(output)) {
+    return;  // Opened or clicked at the PC: leave it alone
   }
-  print("sunshine: moving '" + window.caption + "' to " + output.name);
-  workspace.sendClientToScreen(window, output);
-}
-
-function watch(window) {
-  if (!eligible(window) || window.sunshineWatched) {
-    return;
+  if (!window.sunshineStream) {
+    window.sunshineStream = true;
+    window.fullScreenChanged.connect(function () { bringBack(window); });
+    window.outputChanged.connect(function () { bringBack(window); });
   }
-  window.sunshineWatched = true;
-  // Games and Steam Big Picture often switch to fullscreen, or jump to another screen,
-  // right after they appear. Catch that and move them back.
-  window.fullScreenChanged.connect(function () { moveToVirtual(window); });
-  window.outputChanged.connect(function () { moveToVirtual(window); });
-  window.captionChanged.connect(function () { moveToVirtual(window); });
+  if (window.output !== output) {
+    print("sunshine: moving '" + window.caption + "' to " + output.name);
+    workspace.sendClientToScreen(window, output);
+  }
 }
 
-function handle(window) {
-  watch(window);
-  moveToVirtual(window);
-}
-
-workspace.windowAdded.connect(handle);
-workspace.windowActivated.connect(handle);
-
-// Windows that already exist (like Steam running in the background) are watched too
-const existing = workspace.windowList();
-for (let i = 0; i < existing.length; i++) {
-  watch(existing[i]);
-}
+workspace.windowAdded.connect(claim);
+workspace.windowActivated.connect(claim);
 )js";
 
     /**
