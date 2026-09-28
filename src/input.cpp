@@ -220,6 +220,8 @@ namespace input {
     gamepad_t():
         gamepad_state {},
         back_timeout_id {},
+        start_timeout_id {},
+        mouse_task_id {},
         id {-1},
         back_button_state {button_state_e::NONE} {
     }
@@ -239,6 +241,12 @@ namespace input {
     platf::gamepad_state_t gamepad_state;  ///< Gamepad state.
 
     thread_pool_util::ThreadPool::task_id_t back_timeout_id;  ///< Back timeout ID.
+
+    // Dili mouse mode: hold Start for a second to use the controller as a mouse
+    thread_pool_util::ThreadPool::task_id_t start_timeout_id;  ///< Pending mouse mode toggle.
+    thread_pool_util::ThreadPool::task_id_t mouse_task_id;  ///< Repeating pointer movement task.
+    bool mouse_mode = false;  ///< Whether this controller currently acts as a mouse.
+    double scroll_remainder = 0;  ///< Fractional scroll carried over between ticks.
 
     int id;  ///< Global gamepad slot assigned to this client controller.
 
@@ -1573,6 +1581,86 @@ namespace input {
   }
 
   /**
+   * @brief Convert a stick axis to a -1..1 speed with a dead zone and a smooth curve.
+   */
+  static double mouse_mode_axis(std::int16_t value) {
+    constexpr double dead_zone = 7000.0;
+    const double magnitude = std::abs(static_cast<double>(value));
+    if (magnitude < dead_zone) {
+      return 0.0;
+    }
+    double normalized = (magnitude - dead_zone) / (32767.0 - dead_zone);
+    normalized = std::min(normalized, 1.0);
+    return (value < 0 ? -1.0 : 1.0) * normalized * normalized;
+  }
+
+  /**
+   * @brief Move the pointer and scroll while a controller is in mouse mode.
+   *
+   * Runs every 10 ms, because clients only send controller packets when something changes,
+   * but a stick that is held still should keep moving the pointer.
+   */
+  static void mouse_mode_tick(std::shared_ptr<input_t> input, int controller) {
+    auto &gamepad = input->gamepads[controller];
+    if (!gamepad.mouse_mode || gamepad.id < 0) {
+      gamepad.mouse_task_id = nullptr;
+      return;
+    }
+
+    constexpr double pointer_speed = 18.0;  // pixels per tick at full deflection
+    constexpr double scroll_speed = 12.0;  // scroll units per tick at full deflection (120 = one notch)
+
+    const auto &state = gamepad.gamepad_state;
+    const int dx = static_cast<int>(std::lround(mouse_mode_axis(state.lsX) * pointer_speed));
+    const int dy = static_cast<int>(std::lround(-mouse_mode_axis(state.lsY) * pointer_speed));
+    if (dx != 0 || dy != 0) {
+      platf::move_mouse(platf_input, dx, dy);
+    }
+
+    gamepad.scroll_remainder += mouse_mode_axis(state.rsY) * scroll_speed;
+    if (const int step = static_cast<int>(gamepad.scroll_remainder); step != 0) {
+      platf::scroll(platf_input, step);
+      gamepad.scroll_remainder -= step;
+    }
+
+    gamepad.mouse_task_id = task_pool.pushDelayed(mouse_mode_tick, 10ms, input, controller).task_id;
+  }
+
+  /**
+   * @brief Switch a controller between normal controller mode and mouse mode.
+   */
+  static void toggle_mouse_mode(std::shared_ptr<input_t> input, int controller) {
+    auto &gamepad = input->gamepads[controller];
+    gamepad.start_timeout_id = nullptr;
+    if (gamepad.id < 0) {
+      return;
+    }
+
+    gamepad.mouse_mode = !gamepad.mouse_mode;
+    gamepad.scroll_remainder = 0;
+
+    if (gamepad.mouse_mode) {
+      // Release everything the game might still see as held, then start moving the pointer
+      platf::gamepad_update(platf_input, gamepad.id, platf::gamepad_state_t {});
+      gamepad.mouse_task_id = task_pool.pushDelayed(mouse_mode_tick, 10ms, input, controller).task_id;
+      BOOST_LOG(info) << "[mouse_mode] Controller "sv << controller << " now works as a mouse"sv;
+    } else {
+      if (gamepad.mouse_task_id) {
+        task_pool.cancel(gamepad.mouse_task_id);
+        gamepad.mouse_task_id = nullptr;
+      }
+      // Make sure no mouse button stays pressed
+      if (platf::A & gamepad.gamepad_state.buttonFlags) {
+        platf::button_mouse(platf_input, BUTTON_LEFT, true);
+      }
+      if (platf::B & gamepad.gamepad_state.buttonFlags) {
+        platf::button_mouse(platf_input, BUTTON_RIGHT, true);
+      }
+      BOOST_LOG(info) << "[mouse_mode] Controller "sv << controller << " is a controller again"sv;
+    }
+  }
+
+  /**
    * @brief Forward a client input packet directly to the platform backend.
    *
    * @param input Platform input backend that receives the event.
@@ -1643,6 +1731,28 @@ namespace input {
 
     bf = gamepad_state.buttonFlags ^ gamepad.gamepad_state.buttonFlags;
     bf_new = gamepad_state.buttonFlags;
+
+    // Dili mouse mode: holding Start for one second switches between controller and mouse
+    if (platf::START & bf) {
+      if (platf::START & bf_new) {
+        gamepad.start_timeout_id = task_pool.pushDelayed(toggle_mouse_mode, 1000ms, input, static_cast<int>(packet->controllerNumber)).task_id;
+      } else if (gamepad.start_timeout_id) {
+        task_pool.cancel(gamepad.start_timeout_id);
+        gamepad.start_timeout_id = nullptr;
+      }
+    }
+
+    if (gamepad.mouse_mode) {
+      // A = left click, B = right click, left stick = pointer, right stick = scroll
+      if (platf::A & bf) {
+        platf::button_mouse(platf_input, BUTTON_LEFT, !(platf::A & bf_new));
+      }
+      if (platf::B & bf) {
+        platf::button_mouse(platf_input, BUTTON_RIGHT, !(platf::B & bf_new));
+      }
+      gamepad.gamepad_state = gamepad_state;
+      return;
+    }
 
     if (platf::BACK & bf) {
       if (platf::BACK & bf_new) {

@@ -87,6 +87,13 @@
       </div>
     </section>
 
+    <!-- Tip -->
+    <div class="dili-tip dili-small">
+      <gamepad-2 :size="18"></gamepad-2>
+      <span>Tip: hold <strong>Start</strong> on your controller for one second to use it as a mouse.
+        Left stick moves the pointer, A clicks, B right-clicks, right stick scrolls. Hold Start again to switch back.</span>
+    </div>
+
     <!-- This PC -->
     <section class="dili-section" v-if="autostart.supported">
       <h2>This PC</h2>
@@ -126,7 +133,7 @@
 <script>
   import Navbar from './Navbar.vue'
   import { apiFetch } from './fetch_utils'
-  import { AlertCircle, Check, ChevronRight, Monitor, X } from '@lucide/vue'
+  import { AlertCircle, Check, ChevronRight, Gamepad2, Monitor, X } from '@lucide/vue'
 
   export default {
     components: {
@@ -134,6 +141,7 @@
       AlertCircle,
       Check,
       ChevronRight,
+      Gamepad2,
       Monitor,
       X,
     },
@@ -464,4 +472,14 @@
   .dili-switch.on span {
     margin-left: 22px;
   }
+  .dili-tip {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    background: var(--color-bg-subtle);
+    color: var(--color-text-base);
+  }
+
 </style>
