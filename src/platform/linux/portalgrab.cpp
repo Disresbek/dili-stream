@@ -1648,6 +1648,90 @@ namespace platf {
     return list;
   }
 
+  namespace {
+    constexpr const char *DILI_UNIT = "dili.service";
+    constexpr const char *OLD_SUNSHINE_UNIT = "app-dev.lizardbyte.app.Sunshine.service";
+
+    std::filesystem::path autostart_unit_path() {
+      const char *home = std::getenv("HOME");
+      return std::filesystem::path(home ? home : "/tmp") / ".config/systemd/user" / DILI_UNIT;
+    }
+
+    /**
+     * @brief The command that starts Dili the same way it is running right now
+     *        (inside a distrobox, as a Flatpak, or installed directly).
+     */
+    std::string autostart_command() {
+      std::error_code ec;
+      auto exe = std::filesystem::read_symlink("/proc/self/exe", ec).string();
+      if (exe.empty()) {
+        exe = "sunshine";
+      }
+      if (const char *container = std::getenv("CONTAINER_ID")) {
+        return std::format("/usr/bin/distrobox enter -T {} -- env DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/host/run/dbus/system_bus_socket {}", container, exe);
+      }
+      if (std::filesystem::exists("/.flatpak-info", ec)) {
+        const char *app = std::getenv("FLATPAK_ID");
+        return std::format("/usr/bin/flatpak run {}", app ? app : "dev.lizardbyte.app.Sunshine");
+      }
+      return exe;
+    }
+  }  // namespace
+
+  /**
+   * @brief Whether Dili starts automatically when the user logs in.
+   */
+  nlohmann::json autostart_status() {
+    nlohmann::json out;
+    auto state = portal::virtual_display::run_host(std::format("systemctl --user is-enabled {}", DILI_UNIT));
+    while (!state.empty() && (state.back() == '\n' || state.back() == ' ')) {
+      state.pop_back();
+    }
+    out["supported"] = true;
+    out["enabled"] = state == "enabled";
+    return out;
+  }
+
+  /**
+   * @brief Turn autostart on or off with a systemd user service.
+   *
+   * Turning it on also switches off the autostart of the original Sunshine,
+   * so the two never fight over the same network ports.
+   */
+  bool set_autostart(bool enabled) {
+    using portal::virtual_display::run_host;
+    if (enabled) {
+      const auto path = autostart_unit_path();
+      std::error_code ec;
+      std::filesystem::create_directories(path.parent_path(), ec);
+      std::ofstream unit(path);
+      if (!unit) {
+        BOOST_LOG(error) << "[autostart] Could not write "sv << path.string();
+        return false;
+      }
+      unit << "[Unit]\n"
+           << "Description=Dili game streaming host\n"
+           << "After=graphical-session.target\n"
+           << "PartOf=graphical-session.target\n\n"
+           << "[Service]\n"
+           << "ExecStartPre=-/usr/bin/systemctl --user stop " << OLD_SUNSHINE_UNIT << "\n"
+           << "ExecStart=" << autostart_command() << "\n"
+           << "Restart=on-failure\n"
+           << "RestartSec=5\n\n"
+           << "[Install]\n"
+           << "WantedBy=graphical-session.target\n";
+      unit.close();
+      run_host("systemctl --user daemon-reload");
+      run_host(std::format("systemctl --user enable {}", DILI_UNIT));
+      run_host(std::format("systemctl --user disable {}", OLD_SUNSHINE_UNIT));
+      BOOST_LOG(info) << "[autostart] Enabled: "sv << autostart_command();
+    } else {
+      run_host(std::format("systemctl --user disable {}", DILI_UNIT));
+      BOOST_LOG(info) << "[autostart] Disabled"sv;
+    }
+    return autostart_status()["enabled"].get<bool>() == enabled;
+  }
+
   /**
    * @brief Current state of the virtual screen, for the Home page of the web UI.
    *

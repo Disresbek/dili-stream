@@ -66,6 +66,8 @@ using namespace std::literals;
 namespace platf {
   nlohmann::json kde_display_outputs();
   nlohmann::json virtual_display_status();
+  nlohmann::json autostart_status();
+  bool set_autostart(bool enabled);
 }  // namespace platf
 #endif
 
@@ -1313,6 +1315,75 @@ namespace confighttp {
   }
 
   /**
+   * @brief Get whether Dili starts automatically at login.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/autostart|:| GET|:| null}
+   */
+  void getAutostart(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+#ifdef SUNSHINE_BUILD_PORTAL
+    nlohmann::json output_tree = platf::autostart_status();
+#else
+    nlohmann::json output_tree {{"supported", false}, {"enabled", false}};
+#endif
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Turn autostart at login on or off.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   * The body for the POST request should be JSON serialized in the following format:
+   * @code{.json}
+   * {
+   *   "enabled": true
+   * }
+   * @endcode
+   *
+   * @api_examples{/api/autostart|:| POST|:| {"enabled":true}}
+   */
+  void setAutostart(const resp_https_t &response, const req_https_t &request) {
+    if (!check_content_type(response, request, "application/json")) {
+      return;
+    }
+    if (!authenticate(response, request)) {
+      return;
+    }
+    std::string client_id = get_client_id(request);
+    if (!validate_csrf_token(response, request, client_id)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::stringstream ss;
+    ss << request->content.rdbuf();
+    try {
+      const nlohmann::json input_tree = nlohmann::json::parse(ss);
+      const bool enabled = input_tree.value("enabled", false);
+      nlohmann::json output_tree;
+#ifdef SUNSHINE_BUILD_PORTAL
+      output_tree["status"] = platf::set_autostart(enabled);
+#else
+      output_tree["status"] = false;
+#endif
+      output_tree["enabled"] = enabled;
+      send_response(response, output_tree);
+    } catch (std::exception &e) {
+      BOOST_LOG(warning) << "SetAutostart: "sv << e.what();
+      bad_request(response, request, e.what());
+    }
+  }
+
+  /**
    * @brief Get the streaming status for the Home page.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2484,6 +2555,8 @@ namespace confighttp {
     server.resource["^/api/config$"]["GET"] = getConfig;
     server.resource["^/api/displays$"]["GET"] = getDisplays;
     server.resource["^/api/status$"]["GET"] = getStatus;
+    server.resource["^/api/autostart$"]["GET"] = getAutostart;
+    server.resource["^/api/autostart$"]["POST"] = setAutostart;
     server.resource["^/api/config$"]["POST"] = saveConfig;
     server.resource["^/api/configLocale$"]["GET"] = getLocale;
     server.resource["^/api/covers/([0-9]+)$"]["GET"] = getCover;

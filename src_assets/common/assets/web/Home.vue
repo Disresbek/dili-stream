@@ -87,6 +87,33 @@
       </div>
     </section>
 
+    <!-- This PC -->
+    <section class="dili-section" v-if="autostart.supported">
+      <h2>This PC</h2>
+      <div class="dili-panel">
+        <div class="dili-toggle-row">
+          <div>
+            <div class="dili-row-title">Start Dili when you log in</div>
+            <div class="dili-muted dili-small">
+              Runs quietly in the background, so your devices can connect any time. Takes over from Sunshine's own autostart.
+            </div>
+            <div v-if="autostartError" class="dili-error dili-small">That did not work. Please try again.</div>
+          </div>
+          <button
+            type="button"
+            class="dili-switch"
+            :class="{ on: autostart.enabled }"
+            :aria-pressed="autostart.enabled ? 'true' : 'false'"
+            :disabled="autostartBusy"
+            aria-label="Start Dili when you log in"
+            @click="toggleAutostart"
+          >
+            <span></span>
+          </button>
+        </div>
+      </div>
+    </section>
+
     <footer class="dili-footer dili-muted dili-small">
       Dili <template v-if="version">{{ version }}</template> ·
       {{ $t('index.description') }} ·
@@ -117,6 +144,9 @@
         logs: '',
         ending: false,
         timer: null,
+        autostart: { supported: false, enabled: false },
+        autostartBusy: false,
+        autostartError: false,
       };
     },
     computed: {
@@ -141,6 +171,11 @@
         console.error(e);
       }
       try {
+        this.autostart = await fetch('./api/autostart').then((r) => r.json());
+      } catch (e) {
+        console.error(e);
+      }
+      try {
         this.logs = await fetch('./api/logs').then((r) => r.text());
       } catch (e) {
         console.error(e);
@@ -155,6 +190,28 @@
           this.status = await fetch('./api/status').then((r) => r.json());
         } catch (e) {
           console.error(e);
+        }
+      },
+      async toggleAutostart() {
+        const wanted = !this.autostart.enabled;
+        this.autostartBusy = true;
+        this.autostartError = false;
+        try {
+          const r = await apiFetch('./api/autostart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: wanted }),
+          });
+          const result = await r.json();
+          if (result.status === true) {
+            this.autostart.enabled = wanted;
+          } else {
+            this.autostartError = true;
+          }
+        } catch (e) {
+          this.autostartError = true;
+        } finally {
+          this.autostartBusy = false;
         }
       },
       async endStream() {
@@ -357,5 +414,54 @@
 
   .dili-footer a {
     color: var(--color-text-muted);
+  }
+  .dili-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 16px 20px;
+  }
+
+  .dili-error {
+    color: var(--color-danger);
+    margin-top: 4px;
+  }
+
+  .dili-switch {
+    flex-shrink: 0;
+    width: 50px;
+    height: 30px;
+    border: none;
+    border-radius: 15px;
+    background: var(--color-border-strong);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .dili-switch:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .dili-switch span {
+    display: block;
+    width: 26px;
+    height: 26px;
+    margin-left: 2px;
+    border-radius: 13px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transition: margin-left 0.15s ease;
+  }
+
+  .dili-switch.on {
+    background: var(--color-success);
+  }
+
+  .dili-switch.on span {
+    margin-left: 22px;
   }
 </style>
