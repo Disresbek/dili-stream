@@ -62,6 +62,12 @@
 
 using namespace std::literals;
 
+#ifdef SUNSHINE_BUILD_PORTAL
+namespace platf {
+  nlohmann::json kde_display_outputs();
+}  // namespace platf
+#endif
+
 namespace confighttp {
   namespace fs = std::filesystem;
 
@@ -1306,6 +1312,32 @@ namespace confighttp {
   }
 
   /**
+   * @brief Get the screens of this PC for the Displays page.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/displays|:| GET|:| null}
+   */
+  void getDisplays(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json output_tree;
+#ifdef SUNSHINE_BUILD_PORTAL
+    output_tree["displays"] = platf::kde_display_outputs();
+    output_tree["virtual_supported"] = true;
+#else
+    output_tree["displays"] = nlohmann::json::array();
+    output_tree["virtual_supported"] = false;
+#endif
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
    * @brief Get the list of paired clients.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2411,6 +2443,7 @@ namespace confighttp {
     server.resource["^/api/clients/unpair-all$"]["POST"] = unpairAll;
     server.resource["^/api/clients/update$"]["POST"] = updateClient;
     server.resource["^/api/config$"]["GET"] = getConfig;
+    server.resource["^/api/displays$"]["GET"] = getDisplays;
     server.resource["^/api/config$"]["POST"] = saveConfig;
     server.resource["^/api/configLocale$"]["GET"] = getLocale;
     server.resource["^/api/covers/([0-9]+)$"]["GET"] = getCover;

@@ -24,6 +24,12 @@
               </RouterLink>
             </li>
             <li class="nav-item">
+              <RouterLink class="nav-link" to="/displays">
+                <Monitor :size="18" class="icon"></Monitor>
+                {{ $t('navbar.displays') }}
+              </RouterLink>
+            </li>
+            <li class="nav-item">
               <RouterLink class="nav-link" to="/apps">
                 <Layers :size="18" class="icon"></Layers>
                 {{ $t('navbar.applications') }}
@@ -82,7 +88,7 @@
 </template>
 
 <script>
-import { CircleUserRound, Home, Info, Layers, Lock, LogOut, Settings, Shield, Star } from '@lucide/vue'
+import { CircleUserRound, Home, Info, Layers, Lock, LogOut, Monitor, Settings, Shield, Star } from '@lucide/vue'
 import ThemeToggle from './ThemeToggle.vue'
 import Notification from './Notification.vue'
 
@@ -98,7 +104,8 @@ export default {
     Shield,
     Info,
     CircleUserRound,
-    LogOut
+    LogOut,
+    Monitor
   },
   methods: {
     logout() {

@@ -515,6 +515,7 @@
   "navbar": {
     "applications": "Applications",
     "configuration": "Configuration",
+    "displays": "Displays",
     "featured": "Featured Apps",
     "home": "Home",
     "logout": "Log Out",

@@ -74,6 +74,7 @@ namespace portal {
       int id = 0;  ///< kscreen output id (only valid within one kscreen-doctor run).
       std::string name;  ///< Connector name.
       std::string uuid;  ///< Stable output uuid, if reported.
+      int rotation = 1;  ///< kscreen rotation: 1 normal, 2 left, 4 inverted, 8 right.
       int priority = 0;  ///< 1 = main screen.
       std::string current_mode;  ///< Active mode id.
       std::vector<display_mode_t> modes;  ///< Available modes.
@@ -274,6 +275,7 @@ workspace.windowActivated.connect(claim);
           out.id = o.value("id", 0);
           out.name = o.value("name", "");
           out.uuid = o.value("uuid", "");
+          out.rotation = o.value("rotation", 1);
           out.priority = o.value("priority", 0);
           if (o.contains("currentModeId")) {
             const auto &cm = o.at("currentModeId");
@@ -1606,6 +1608,44 @@ namespace platf {
    * @param allow_start_timeout True if "Start" DBus call is allowed to time out.
    * @return Portal display names, or an empty list when portal discovery fails.
    */
+  /**
+   * @brief Describe the screens KDE reports, for the Displays page of the web UI.
+   *
+   * @return JSON array with one object per screen: name, virtual, priority, width, height, hz, max_hz, portrait.
+   */
+  nlohmann::json kde_display_outputs() {
+    nlohmann::json list = nlohmann::json::array();
+    for (const auto &o : portal::virtual_display::read_outputs()) {
+      nlohmann::json item;
+      item["name"] = o.name;
+      item["virtual"] = o.name.starts_with("Virtual-");
+      item["priority"] = o.priority;
+      item["portrait"] = (o.rotation == 2 || o.rotation == 8);
+      int width = 0;
+      int height = 0;
+      double hz = 0;
+      for (const auto &m : o.modes) {
+        if (m.id == o.current_mode) {
+          width = m.width;
+          height = m.height;
+          hz = m.hz;
+        }
+      }
+      double max_hz = hz;
+      for (const auto &m : o.modes) {
+        if (m.width == width && m.height == height && m.hz > max_hz) {
+          max_hz = m.hz;
+        }
+      }
+      item["width"] = width;
+      item["height"] = height;
+      item["hz"] = std::round(hz);
+      item["max_hz"] = std::round(max_hz);
+      list.push_back(item);
+    }
+    return list;
+  }
+
   std::vector<std::string> portal_display_names(bool allow_start_timeout) {
     // Virtual display mode: there is nothing to enumerate. Opening a second portal session here
     // would make KDE hand out the same virtual screen twice, and closing it again would pull the
