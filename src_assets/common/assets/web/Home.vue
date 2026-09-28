@@ -91,7 +91,7 @@
     <div class="dili-tip dili-small">
       <gamepad-2 :size="18"></gamepad-2>
       <span>Tip: hold <strong>Start</strong> on your controller for one second to use it as a mouse.
-        Left stick moves the pointer, A clicks, B right-clicks, right stick scrolls. Hold Start again to switch back.</span>
+        Right stick moves the pointer, LB clicks, RB right-clicks, left stick scrolls. Hold Start again to switch back.</span>
     </div>
 
     <!-- This PC -->

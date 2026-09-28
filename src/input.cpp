@@ -1611,13 +1611,13 @@ namespace input {
     constexpr double scroll_speed = 12.0;  // scroll units per tick at full deflection (120 = one notch)
 
     const auto &state = gamepad.gamepad_state;
-    const int dx = static_cast<int>(std::lround(mouse_mode_axis(state.lsX) * pointer_speed));
-    const int dy = static_cast<int>(std::lround(-mouse_mode_axis(state.lsY) * pointer_speed));
+    const int dx = static_cast<int>(std::lround(mouse_mode_axis(state.rsX) * pointer_speed));
+    const int dy = static_cast<int>(std::lround(-mouse_mode_axis(state.rsY) * pointer_speed));
     if (dx != 0 || dy != 0) {
       platf::move_mouse(platf_input, dx, dy);
     }
 
-    gamepad.scroll_remainder += mouse_mode_axis(state.rsY) * scroll_speed;
+    gamepad.scroll_remainder += mouse_mode_axis(state.lsY) * scroll_speed;
     if (const int step = static_cast<int>(gamepad.scroll_remainder); step != 0) {
       platf::scroll(platf_input, step);
       gamepad.scroll_remainder -= step;
@@ -1650,10 +1650,10 @@ namespace input {
         gamepad.mouse_task_id = nullptr;
       }
       // Make sure no mouse button stays pressed
-      if (platf::A & gamepad.gamepad_state.buttonFlags) {
+      if (platf::LEFT_BUTTON & gamepad.gamepad_state.buttonFlags) {
         platf::button_mouse(platf_input, BUTTON_LEFT, true);
       }
-      if (platf::B & gamepad.gamepad_state.buttonFlags) {
+      if (platf::RIGHT_BUTTON & gamepad.gamepad_state.buttonFlags) {
         platf::button_mouse(platf_input, BUTTON_RIGHT, true);
       }
       BOOST_LOG(info) << "[mouse_mode] Controller "sv << controller << " is a controller again"sv;
@@ -1743,12 +1743,12 @@ namespace input {
     }
 
     if (gamepad.mouse_mode) {
-      // A = left click, B = right click, left stick = pointer, right stick = scroll
-      if (platf::A & bf) {
-        platf::button_mouse(platf_input, BUTTON_LEFT, !(platf::A & bf_new));
+      // Right stick = pointer, left stick = scroll, LB = left click, RB = right click
+      if (platf::LEFT_BUTTON & bf) {
+        platf::button_mouse(platf_input, BUTTON_LEFT, !(platf::LEFT_BUTTON & bf_new));
       }
-      if (platf::B & bf) {
-        platf::button_mouse(platf_input, BUTTON_RIGHT, !(platf::B & bf_new));
+      if (platf::RIGHT_BUTTON & bf) {
+        platf::button_mouse(platf_input, BUTTON_RIGHT, !(platf::RIGHT_BUTTON & bf_new));
       }
       gamepad.gamepad_state = gamepad_state;
       return;
