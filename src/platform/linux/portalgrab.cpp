@@ -16,6 +16,7 @@
 #include <mutex>
 #include <set>
 #include <thread>
+#include <unistd.h>
 
 // lib includes
 #include <nlohmann/json.hpp>
@@ -1730,6 +1731,100 @@ namespace platf {
       BOOST_LOG(info) << "[autostart] Disabled"sv;
     }
     return autostart_status()["enabled"].get<bool>() == enabled;
+  }
+
+  namespace {
+    std::filesystem::path setup_done_path() {
+      return platf::appdata() / "dili_setup_done";
+    }
+
+    /**
+     * @brief One-time system setup, run as root through pkexec.
+     *
+     * Lets the user's session create virtual controllers (uinput/uhid) and opens
+     * the streaming ports in the firewall, if firewalld is used.
+     */
+    constexpr const char *SETUP_SCRIPT = R"sh(#!/bin/sh
+set -e
+cat > /etc/udev/rules.d/60-dili-input.rules <<'RULES'
+KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"
+KERNEL=="uhid", TAG+="uaccess"
+RULES
+udevadm control --reload-rules
+udevadm trigger --name-match=uinput --name-match=uhid || true
+if command -v firewall-cmd >/dev/null 2>&1; then
+  firewall-cmd --permanent --add-port=47984/tcp --add-port=47989-47990/tcp --add-port=48010/tcp \
+    --add-port=47998-48000/udp --add-port=48002/udp --add-port=48010/udp >/dev/null || true
+  firewall-cmd --reload >/dev/null || true
+fi
+echo done
+)sh";
+  }  // namespace
+
+  /**
+   * @brief What the setup wizard needs to know about this PC.
+   */
+  nlohmann::json setup_status() {
+    nlohmann::json out;
+    std::error_code ec;
+    out["complete"] = std::filesystem::exists(setup_done_path(), ec);
+    out["controls_ready"] = access("/dev/uinput", W_OK) == 0;
+    out["screen_sharing_ready"] = portal::restore_token_t::exists();
+    return out;
+  }
+
+  /**
+   * @brief Run the one-time system setup. KDE asks for the password once.
+   *
+   * @return Whether controls are ready afterwards.
+   */
+  bool setup_permissions() {
+    const char *home = std::getenv("HOME");
+    const auto path = std::filesystem::path(home ? home : "/tmp") / ".local/share/sunshine/dili-setup.sh";
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    {
+      std::ofstream file(path);
+      file << SETUP_SCRIPT;
+    }
+    const auto result = portal::virtual_display::run_host("pkexec /bin/sh " + path.string());
+    BOOST_LOG(info) << "[setup] System setup finished: "sv << (result.find("done") != std::string::npos ? "ok"sv : "cancelled or failed"sv);
+    // udev needs a moment to apply the new permissions
+    for (int i = 0; i < 20 && access("/dev/uinput", W_OK) != 0; ++i) {
+      std::this_thread::sleep_for(100ms);
+    }
+    return access("/dev/uinput", W_OK) == 0;
+  }
+
+  /**
+   * @brief Ask KDE for screen sharing permission once, so later streams start without a dialog.
+   *
+   * @return Whether permission is now stored.
+   */
+  bool setup_screen_sharing() {
+    {
+      // Never open a second session while a stream is using the virtual screen
+      auto &sv = portal::shared_virtual();
+      std::lock_guard lock(sv.mutex);
+      if (sv.users > 0) {
+        return portal::restore_token_t::exists();
+      }
+    }
+    auto dbus = std::make_unique<portal::dbus_t>();
+    if (dbus->init() < 0 || dbus->connect_to_portal(false) < 0) {
+      return false;
+    }
+    dbus.reset();  // Close the test session again
+    return portal::restore_token_t::exists();
+  }
+
+  /**
+   * @brief Remember that the setup wizard has been completed.
+   */
+  bool setup_mark_complete() {
+    std::ofstream file(setup_done_path());
+    file << "1\n";
+    return file.good();
   }
 
   /**

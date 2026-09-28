@@ -170,6 +170,16 @@
       },
     },
     async created() {
+      // First run: show the setup wizard once
+      try {
+        const setup = await fetch('./api/setup').then((r) => r.json());
+        if (setup.complete === false) {
+          this.$router.replace('/setup');
+          return;
+        }
+      } catch (e) {
+        console.error(e);
+      }
       this.refresh();
       this.timer = setInterval(this.refresh, 3000);
       try {

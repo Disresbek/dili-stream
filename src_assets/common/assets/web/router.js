@@ -17,6 +17,7 @@ const routes = [
   { path: '/logout', component: () => import('./Logout.vue') },
   { path: '/password', component: () => import('./Password.vue') },
   { path: '/devices', component: () => import('./Devices.vue') },
+  { path: '/setup', component: () => import('./Setup.vue') },
   { path: '/pin', redirect: '/devices' },
   { path: '/troubleshooting', component: () => import('./Troubleshooting.vue') },
   { path: '/welcome', component: () => import('./Welcome.vue') },

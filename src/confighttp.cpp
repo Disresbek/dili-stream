@@ -68,6 +68,10 @@ namespace platf {
   nlohmann::json virtual_display_status();
   nlohmann::json autostart_status();
   bool set_autostart(bool enabled);
+  nlohmann::json setup_status();
+  bool setup_permissions();
+  bool setup_screen_sharing();
+  bool setup_mark_complete();
 }  // namespace platf
 #endif
 
@@ -1315,6 +1319,82 @@ namespace confighttp {
   }
 
   /**
+   * @brief Get the state of the first-run setup wizard.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/setup|:| GET|:| null}
+   */
+  void getSetup(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+#ifdef SUNSHINE_BUILD_PORTAL
+    nlohmann::json output_tree = platf::setup_status();
+#else
+    nlohmann::json output_tree {{"complete", true}, {"controls_ready", true}, {"screen_sharing_ready", true}};
+#endif
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Run one step of the first-run setup wizard.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   * The body for the POST request should be JSON serialized in the following format:
+   * @code{.json}
+   * {
+   *   "action": "permissions" | "screen_sharing" | "complete"
+   * }
+   * @endcode
+   *
+   * @api_examples{/api/setup|:| POST|:| {"action":"complete"}}
+   */
+  void postSetup(const resp_https_t &response, const req_https_t &request) {
+    if (!check_content_type(response, request, "application/json")) {
+      return;
+    }
+    if (!authenticate(response, request)) {
+      return;
+    }
+    std::string client_id = get_client_id(request);
+    if (!validate_csrf_token(response, request, client_id)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::stringstream ss;
+    ss << request->content.rdbuf();
+    try {
+      const nlohmann::json input_tree = nlohmann::json::parse(ss);
+      const std::string action = input_tree.value("action", "");
+      bool ok = false;
+#ifdef SUNSHINE_BUILD_PORTAL
+      if (action == "permissions") {
+        ok = platf::setup_permissions();
+      } else if (action == "screen_sharing") {
+        ok = platf::setup_screen_sharing();
+      } else if (action == "complete") {
+        ok = platf::setup_mark_complete();
+      }
+#else
+      ok = action == "complete";
+#endif
+      nlohmann::json output_tree;
+      output_tree["status"] = ok;
+      send_response(response, output_tree);
+    } catch (std::exception &e) {
+      BOOST_LOG(warning) << "PostSetup: "sv << e.what();
+      bad_request(response, request, e.what());
+    }
+  }
+
+  /**
    * @brief Get whether Dili starts automatically at login.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2557,6 +2637,8 @@ namespace confighttp {
     server.resource["^/api/status$"]["GET"] = getStatus;
     server.resource["^/api/autostart$"]["GET"] = getAutostart;
     server.resource["^/api/autostart$"]["POST"] = setAutostart;
+    server.resource["^/api/setup$"]["GET"] = getSetup;
+    server.resource["^/api/setup$"]["POST"] = postSetup;
     server.resource["^/api/config$"]["POST"] = saveConfig;
     server.resource["^/api/configLocale$"]["GET"] = getLocale;
     server.resource["^/api/covers/([0-9]+)$"]["GET"] = getCover;
