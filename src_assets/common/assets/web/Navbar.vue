@@ -2,8 +2,8 @@
   <div>
     <nav class="navbar navbar-expand-lg navbar-sunshine">
       <div class="container-fluid">
-        <RouterLink class="navbar-brand" to="/" title="Sunshine">
-          <img src="/images/logo-sunshine-45.png" height="45" alt="Sunshine">
+        <RouterLink class="navbar-brand" to="/" title="Dili">
+          <DiliLogo></DiliLogo>
         </RouterLink>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
                 aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
@@ -90,10 +90,12 @@
 <script>
 import { CircleUserRound, Home, Info, Layers, Lock, LogOut, Monitor, Settings, Shield, Star } from '@lucide/vue'
 import ThemeToggle from './ThemeToggle.vue'
+import DiliLogo from './DiliLogo.vue'
 import Notification from './Notification.vue'
 
 export default {
   components: {
+    DiliLogo,
     ThemeToggle,
     Notification,
     Home,

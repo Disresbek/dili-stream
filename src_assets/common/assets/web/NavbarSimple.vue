@@ -1,8 +1,8 @@
 <template>
   <nav class="navbar navbar-sunshine">
     <div class="container-fluid">
-      <span class="navbar-brand" title="Sunshine">
-        <img src="/images/logo-sunshine-45.png" height="45" alt="Sunshine">
+      <span class="navbar-brand" title="Dili">
+        <DiliLogo></DiliLogo>
       </span>
       <ThemeToggle/>
     </div>
@@ -11,9 +11,11 @@
 
 <script>
 import ThemeToggle from './ThemeToggle.vue'
+import DiliLogo from './DiliLogo.vue'
 
 export default {
   components: {
+    DiliLogo,
     ThemeToggle,
   },
 }

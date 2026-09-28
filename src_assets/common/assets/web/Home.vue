@@ -1,392 +1,361 @@
 <template>
   <Navbar></Navbar>
-  <div id="content" class="container">
-    <h1 class="my-4">{{ $t('index.welcome') }}</h1>
-    <p>{{ $t('index.description') }}</p>
+  <div id="content" class="container dili-page">
+    <header class="dili-header">
+      <h1>Home</h1>
+      <p v-if="status && status.sessions > 0">Someone is playing right now.</p>
+      <p v-else>Everything is set up. Open Moonlight on any device and start playing.</p>
+    </header>
 
-    <!-- Fatal Errors Alert -->
-    <div class="alert alert-danger my-4" v-if="fancyLogs.some(x => x.level === 'Fatal')">
-      <div>
-        <div class="d-flex align-items-center mb-3">
-          <alert-circle :size="32" class="icon-lg me-3"></alert-circle>
-          <div v-html="$t('index.startup_errors')"></div>
-        </div>
-        <ul class="mb-3">
-          <li v-for="v in fancyLogs.filter(x => x.level === 'Fatal')" :key="`${v.timestamp}-${v.value}`">{{v.value}}</li>
-        </ul>
-        <RouterLink class="btn btn-danger" to="/troubleshooting#logs">
-          <file-text :size="18" class="icon"></file-text>
-          View Logs
-        </RouterLink>
+    <!-- Startup errors -->
+    <div class="alert alert-danger" v-if="fatalLogs.length">
+      <div class="d-flex align-items-center mb-3">
+        <alert-circle :size="28" class="me-3"></alert-circle>
+        <div v-html="$t('index.startup_errors')"></div>
       </div>
+      <ul class="mb-3">
+        <li v-for="v in fatalLogs" :key="`${v.timestamp}-${v.value}`">{{ v.value }}</li>
+      </ul>
+      <RouterLink class="btn btn-danger" to="/troubleshooting#logs">View logs</RouterLink>
     </div>
 
-    <!-- Virtual gamepad broker status -->
-    <div class="alert my-4" :class="virtualInputNotice.alertClass" v-if="virtualInputNotice">
-      <div>
-        <div class="d-flex align-items-center mb-3">
-          <alert-triangle v-if="virtualInputNotice.warning" :size="32" class="icon-lg me-3"></alert-triangle>
-          <info v-else :size="32" class="icon-lg me-3"></info>
+    <!-- Status -->
+    <section class="dili-status">
+      <div class="dili-status-icon" :class="{ problem: fatalLogs.length }">
+        <x v-if="fatalLogs.length" :size="28"></x>
+        <check v-else :size="28"></check>
+      </div>
+      <div class="dili-status-text">
+        <div class="dili-status-title">{{ fatalLogs.length ? 'Needs attention' : 'Ready to stream' }}</div>
+        <div class="dili-muted">
+          <template v-if="status">
+            Your PC is visible to Moonlight as <strong>{{ status.host_name }}</strong>.
+          </template>
+          <template v-else>Checking…</template>
+        </div>
+      </div>
+      <RouterLink class="dili-pill" to="/pin">Pair a device</RouterLink>
+    </section>
+
+    <!-- Streaming now -->
+    <section class="dili-section">
+      <h2>Streaming now</h2>
+      <div v-if="status && status.sessions > 0" class="dili-panel dili-stream">
+        <div class="dili-tile">
+          <monitor :size="24"></monitor>
+        </div>
+        <div class="dili-stream-text">
+          <div class="dili-stream-title">
+            {{ status.app || 'A device is connected' }}
+            <span v-if="status.sessions > 1" class="dili-muted"> · {{ status.sessions }} devices</span>
+          </div>
+          <div class="dili-muted" v-if="status.virtual_display && status.virtual_display.active">
+            Virtual screen · {{ status.virtual_display.width }} × {{ status.virtual_display.height }} · {{ status.virtual_display.hz }} Hz
+          </div>
+          <div class="dili-muted" v-else>Streaming your monitor</div>
+        </div>
+        <button type="button" class="dili-pill dili-pill-outline" :disabled="ending" @click="endStream">
+          {{ ending ? 'Ending…' : 'End stream' }}
+        </button>
+      </div>
+      <div v-else class="dili-panel dili-empty">
+        No one is streaming right now.
+      </div>
+    </section>
+
+    <!-- Shortcuts -->
+    <section class="dili-section">
+      <h2>Quick settings</h2>
+      <div class="dili-panel">
+        <RouterLink class="dili-link-row" to="/displays">
           <div>
-            <p class="mb-1"><strong>{{ $t(virtualInputNotice.title) }}</strong></p>
-            <p v-for="message in virtualInputNotice.messages" :key="message.key" class="mb-1">
-              {{ $t(message.key, message.params || {}) }}
-            </p>
+            <div class="dili-row-title">Displays</div>
+            <div class="dili-muted dili-small">
+              {{ status && status.virtual_enabled ? 'A virtual screen is created for each device' : 'Streaming one of your monitors' }}
+            </div>
           </div>
-        </div>
-        <RouterLink class="btn" :class="virtualInputNotice.buttonClass" :to="virtualInputNotice.to">
-          <gamepad-2 v-if="virtualInputNotice.chooseDriver" :size="18" class="icon"></gamepad-2>
-          <wrench v-else :size="18" class="icon"></wrench>
-          {{ $t(virtualInputNotice.action) }}
+          <chevron-right :size="20"></chevron-right>
+        </RouterLink>
+        <div class="dili-divider"></div>
+        <RouterLink class="dili-link-row" to="/apps">
+          <div>
+            <div class="dili-row-title">Applications</div>
+            <div class="dili-muted dili-small">What your devices can start from Moonlight</div>
+          </div>
+          <chevron-right :size="20"></chevron-right>
         </RouterLink>
       </div>
-    </div>
+    </section>
 
-    <!-- Version -->
-    <div class="card my-4">
-      <div class="card-body" v-if="version">
-        <h2>Version {{version.version}}</h2>
-
-        <div v-if="loading" class="my-3">
-          {{ $t('index.loading_latest') }}
-        </div>
-
-        <div class="alert alert-success my-3" v-if="buildVersionIsDirty">
-          <package :size="18" class="icon"></package>
-          {{ $t('index.version_dirty') }} 🌇
-        </div>
-
-        <div class="alert alert-info my-3" v-if="installedVersionNotStable">
-          <info :size="18" class="icon"></info>
-          {{ $t('index.installed_version_not_stable') }}
-        </div>
-
-        <div v-else-if="(!preReleaseBuildAvailable || !notifyPreReleases) && !stableBuildAvailable && !buildVersionIsDirty">
-          <div class="alert alert-success my-3">
-            <check-circle :size="18" class="icon"></check-circle>
-            {{ $t('index.version_latest') }}
-          </div>
-        </div>
-
-        <div v-if="notifyPreReleases && preReleaseBuildAvailable">
-          <div class="alert alert-warning my-3">
-            <!-- header row -->
-            <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap mb-3">
-              <div class="d-flex align-items-center gap-3 flex-wrap">
-                <alert-circle :size="18" class="icon"></alert-circle>
-                <span>{{ $t('index.new_pre_release') }}</span>
-                <h5 class="mb-0">{{ preReleaseVersion.release.name }}</h5>
-              </div>
-              <a class="btn btn-success flex-shrink-0" :href="preReleaseVersion.release.html_url" target="_blank">
-                <download :size="18" class="icon"></download>
-                {{ $t('index.download') }}
-              </a>
-            </div>
-
-            <!-- body row (full width) -->
-            <div class="markdown-body release-notes" v-html="convertMarkdownToHtml(preReleaseVersion.release.body)"></div>
-          </div>
-        </div>
-
-        <div v-if="stableBuildAvailable">
-          <div class="alert alert-warning my-3">
-            <!-- header row -->
-            <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap mb-3">
-              <div class="d-flex align-items-center gap-3 flex-wrap">
-                <alert-circle :size="18" class="icon"></alert-circle>
-                <span>{{ $t('index.new_stable') }}</span>
-                <h5 class="mb-0">{{ githubVersion.release.name }}</h5>
-              </div>
-              <a class="btn btn-success flex-shrink-0" :href="githubVersion.release.html_url" target="_blank">
-                <download :size="18" class="icon"></download>
-                {{ $t('index.download') }}
-              </a>
-            </div>
-
-            <!-- body row (full width) -->
-            <div class="markdown-body release-notes" v-html="convertMarkdownToHtml(githubVersion.release.body)"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Resources -->
-    <div class="my-4">
-      <Resource-Card :installed-version-not-stable="installedVersionNotStable"></Resource-Card>
-    </div>
+    <footer class="dili-footer dili-muted dili-small">
+      Dili <template v-if="version">{{ version }}</template> ·
+      {{ $t('index.description') }} ·
+      <a href="https://github.com/LizardByte/Sunshine" target="_blank" rel="noopener">Sunshine on GitHub</a> ·
+      <a href="https://github.com/LizardByte/Sunshine/blob/master/LICENSE" target="_blank" rel="noopener">GPL-3.0</a>
+    </footer>
   </div>
 </template>
 
 <script>
-  import { marked } from 'marked'
   import Navbar from './Navbar.vue'
-  import ResourceCard from './ResourceCard.vue'
-  import SunshineVersion from './sunshine_version'
-  import {
-    AlertCircle,
-    AlertTriangle,
-    FileText,
-    Wrench,
-    Package,
-    Info,
-    CheckCircle,
-    Download,
-    Gamepad2
-  } from '@lucide/vue'
+  import { apiFetch } from './fetch_utils'
+  import { AlertCircle, Check, ChevronRight, Monitor, X } from '@lucide/vue'
 
-  // Configure marked to allow HTML
-  marked.setOptions({
-    breaks: true,
-    gfm: true,
-    headerIds: true,
-    mangle: false,
-    sanitize: false
-  });
-
-  console.log("Hello, Sunshine!")
   export default {
     components: {
       Navbar,
-      ResourceCard,
       AlertCircle,
-      AlertTriangle,
-      FileText,
-      Wrench,
-      Package,
-      Info,
-      CheckCircle,
-      Download,
-      Gamepad2
+      Check,
+      ChevronRight,
+      Monitor,
+      X,
     },
     data() {
       return {
-        version: null,
-        githubVersion: null,
-        notifyPreReleases: false,
-        preReleaseVersion: null,
-        loading: true,
-        logs: null,
-        platform: "",
-        controllerEnabled: false,
-        gamepadDriver: '',
-        virtualhid: null,
-        virtualhidLicense: null,
-        vigembus: null,
-      }
-    },
-    async created() {
-      try {
-        let config = await fetch("./api/config").then((r) => r.json());
-        this.notifyPreReleases = config.notify_pre_releases;
-        this.platform = config.platform;
-        this.controllerEnabled = config.controller !== "disabled";
-        this.gamepadDriver = config.gamepad_driver || '';
-        this.version = new SunshineVersion(null, config.version);
-        console.log("Version: ", this.version.version)
-        this.githubVersion = new SunshineVersion(await fetch("https://api.github.com/repos/LizardByte/Sunshine/releases/latest").then((r) => r.json()), null);
-        console.log("GitHub Version: ", this.githubVersion.version)
-        this.preReleaseVersion = new SunshineVersion((await fetch("https://api.github.com/repos/LizardByte/Sunshine/releases").then((r) => r.json())).find(release => release.prerelease), null);
-        console.log("Pre-Release Version: ", this.preReleaseVersion.version)
-
-        // Read the broker version on both platforms to identify development builds.
-        if (this.platform === 'windows' || this.platform === 'macos') {
-          try {
-            const virtualInputStatus = await fetch("./api/virtual-input/status").then((r) => r.json());
-            this.virtualhid = virtualInputStatus.virtualhid;
-            if (this.platform === 'windows') {
-              this.vigembus = virtualInputStatus.vigembus;
-            }
-          } catch (e) {
-            console.error("Failed to fetch virtual input driver status:", e);
-          }
-        }
-        if (this.platform === 'windows' || this.platform === 'macos') {
-          try {
-            this.virtualhidLicense = await fetch("./api/virtual-input/license").then((r) => r.json());
-          } catch (e) {
-            console.error("Failed to fetch Virtual HID Broker license status:", e);
-          }
-        }
-      } catch (e) {
-        console.error(e);
-      }
-      try {
-        this.logs = (await fetch("./api/logs").then(r => r.text()))
-      } catch (e) {
-        console.error(e);
-      }
-      this.loading = false;
+        status: null,
+        version: '',
+        logs: '',
+        ending: false,
+        timer: null,
+      };
     },
     computed: {
-      /**
-       * Build the virtual-input message shown on the home page.
-       * Warn about broker or gamepad driver issues when virtual gamepads are enabled.
-       */
-      virtualInputNotice() {
-        if (!this.controllerEnabled || this.gamepadDriver === 'none') {
-          return null;
-        }
-
-        if (this.platform === 'macos') {
-          return this.buildMacosVirtualInputNotice();
-        }
-
-        if (this.platform !== 'windows' || !this.virtualhid || !this.vigembus) {
-          return null;
-        }
-
-        const vigembusUsable = this.vigembus.installed && this.vigembus.version_compatible;
-
-        if (!this.gamepadDriver) {
-          return this.buildVirtualInputNotice(false, 'index.gamepad_driver_choice_title', [{
-            key: 'index.gamepad_driver_choice_desc',
-          }], {
-            action: 'index.choose_gamepad_driver',
-            chooseDriver: true,
-            to: '/config#gamepad_driver',
-          });
-        }
-
-        if (this.gamepadDriver === 'vigembus') {
-          return this.buildVigembusNotice(vigembusUsable);
-        }
-
-        if (this.virtualhid.installed) {
-          return this.buildInstalledVirtualhidNotice(vigembusUsable);
-        }
-
-        if (this.gamepadDriver === 'virtualhid') {
-          return this.buildVirtualInputNotice(true, 'index.virtualhid_broker_unavailable_title', [{ key: 'index.virtualhid_required_desc' }]);
-        }
-
-        if (this.controllerEnabled && !vigembusUsable) {
-          return this.buildVirtualInputNotice(true, 'index.virtual_input_unavailable_title', [{ key: 'index.virtual_input_unavailable_desc' }]);
-        }
-
-        return this.buildVirtualInputNotice(
-          false,
-          'index.virtualhid_optional_title',
-          [{ key: this.controllerEnabled ? 'index.virtualhid_optional_vigembus_desc' : 'index.virtualhid_optional_desc' }],
-        );
-      },
-      installedVersionNotStable() {
-        if (!this.githubVersion || !this.version) {
-          return false;
-        }
-        return this.version.isGreater(this.githubVersion);
-      },
-      stableBuildAvailable() {
-        if (!this.githubVersion || !this.version) {
-          return false;
-        }
-        return this.githubVersion.isGreater(this.version);
-      },
-      preReleaseBuildAvailable() {
-        if (!this.preReleaseVersion || !this.githubVersion || !this.version) {
-          return false;
-        }
-        return this.preReleaseVersion.isGreater(this.version) && this.preReleaseVersion.isGreater(this.githubVersion);
-      },
-      buildVersionIsDirty() {
-        return this.version.version?.split(".").length === 5 &&
-          this.version.version.includes("dirty")
-      },
-      /** Parse the text errors, calculating the text, the timestamp and the level */
-      fancyLogs() {
+      fatalLogs() {
         if (!this.logs) return [];
-        let regex = /(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}]):\s/g;
-        let rawLogLines = (this.logs.split(regex)).splice(1);
-        let logLines = []
-        for (let i = 0; i < rawLogLines.length; i += 2) {
-          logLines.push({ timestamp: rawLogLines[i], level: rawLogLines[i + 1].split(":")[0], value: rawLogLines[i + 1] });
+        const regex = /(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}]):\s/g;
+        const raw = this.logs.split(regex).splice(1);
+        const lines = [];
+        for (let i = 0; i < raw.length; i += 2) {
+          lines.push({ timestamp: raw[i], level: raw[i + 1].split(':')[0], value: raw[i + 1] });
         }
-        return logLines;
+        return lines.filter((x) => x.level === 'Fatal');
+      },
+    },
+    async created() {
+      this.refresh();
+      this.timer = setInterval(this.refresh, 3000);
+      try {
+        const config = await fetch('./api/config').then((r) => r.json());
+        this.version = config.version || '';
+      } catch (e) {
+        console.error(e);
+      }
+      try {
+        this.logs = await fetch('./api/logs').then((r) => r.text());
+      } catch (e) {
+        console.error(e);
       }
     },
+    beforeUnmount() {
+      clearInterval(this.timer);
+    },
     methods: {
-      /**
-       * Build the macOS broker notice, prioritizing license and service warnings.
-       *
-       * @returns {object|null} Warning or development-build notice, when applicable.
-       */
-      buildMacosVirtualInputNotice() {
-        if (this.virtualhidLicense && !this.virtualhidLicense.licensed) {
-          return this.virtualhidLicense.service_available
-            ? this.buildVirtualInputNotice(true, 'index.virtualhid_macos_license_title', [{ key: 'index.virtualhid_macos_license_desc' }])
-            : this.buildVirtualInputNotice(true, 'index.virtualhid_broker_unavailable_title', [{ key: 'index.virtualhid_macos_broker_desc' }]);
+      async refresh() {
+        try {
+          this.status = await fetch('./api/status').then((r) => r.json());
+        } catch (e) {
+          console.error(e);
         }
-        return this.virtualhid?.development_version
-          ? this.buildVirtualInputNotice(false, 'index.virtualhid_development_title', [{ key: 'index.virtualhid_development_desc' }])
-          : null;
       },
-      /**
-       * Build a home-page notice for the current virtual-input state.
-       *
-       * @param {boolean} warning Whether the notice represents an actionable warning.
-       * @param {string} title Localization key for the notice title.
-       * @param {object[]} messages Localized message descriptors.
-       * @param {object} options Optional action and destination overrides.
-       * @returns {object} Notice data consumed by the template.
-       */
-      buildVirtualInputNotice(warning, title, messages, options = {}) {
-        return {
-          action: options.action || 'index.review_virtual_input',
-          alertClass: warning ? 'alert-warning' : 'alert-info',
-          buttonClass: warning ? 'btn-warning' : 'btn-info',
-          chooseDriver: options.chooseDriver || false,
-          to: options.to || '/troubleshooting#virtualhid',
-          messages,
-          title,
-          warning,
-        };
-      },
-      /**
-       * Build the notice for an explicitly selected ViGEmBus backend.
-       *
-       * @param {boolean} vigembusUsable Whether ViGEmBus is installed and compatible.
-       * @returns {object|null} Warning data, or no notice when ViGEmBus is usable.
-       */
-      buildVigembusNotice(vigembusUsable) {
-        if (!this.controllerEnabled || vigembusUsable) {
-          return null;
-        }
-        return this.buildVirtualInputNotice(true, 'index.vigembus_required_title', [{
-          key: this.vigembus.installed ? 'index.vigembus_outdated_desc' : 'index.vigembus_not_installed_desc',
-          params: { version: this.vigembus.version, supported_versions: this.vigembus.supported_versions },
-        }]);
-      },
-      /**
-       * Build the notice for an installed Virtual HID Driver.
-       *
-       * @param {boolean} vigembusUsable Whether ViGEmBus is available as a fallback.
-       * @returns {object|null} Warning or informational data, or no notice when fully usable.
-       */
-      buildInstalledVirtualhidNotice(vigembusUsable) {
-        const messages = [];
-        if (!this.virtualhid.version_compatible && !this.virtualhid.development_version) {
-          messages.push({
-            key: 'index.virtualhid_outdated_desc',
-            params: { version: this.virtualhid.version, supported_versions: this.virtualhid.supported_versions },
+      async endStream() {
+        this.ending = true;
+        try {
+          await apiFetch('./api/apps/close', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
           });
+        } finally {
+          setTimeout(() => {
+            this.ending = false;
+            this.refresh();
+          }, 1500);
         }
-        if (this.virtualhidLicense && !this.virtualhidLicense.licensed) {
-          const licenseMessageKey = this.gamepadDriver === 'all' && vigembusUsable ?
-            'index.virtualhid_license_invalid_fallback_desc' :
-            'index.virtualhid_license_invalid_desc';
-          messages.push({ key: licenseMessageKey });
-        }
-        if (messages.length) {
-          return this.buildVirtualInputNotice(true, 'index.virtualhid_attention_title', messages);
-        }
-        if (this.virtualhid.development_version) {
-          return this.buildVirtualInputNotice(false, 'index.virtualhid_development_title', [{ key: 'index.virtualhid_development_desc' }]);
-        }
-        return null;
       },
-      convertMarkdownToHtml(markdown) {
-        if (!markdown) return '';
-        return marked.parse(markdown);
-      }
-    }
-  }
+    },
+  };
 </script>
+
+<style scoped>
+  .dili-page {
+    max-width: 1100px;
+    padding-top: 36px;
+    padding-bottom: 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .dili-header h1 {
+    margin: 0 0 6px 0;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .dili-header p,
+  .dili-muted {
+    margin: 0;
+    color: var(--color-text-muted);
+  }
+
+  .dili-small {
+    font-size: 13px;
+  }
+
+  .dili-status {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    padding: 28px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  .dili-status-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 28px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    background: var(--color-success);
+  }
+
+  .dili-status-icon.problem {
+    background: var(--color-danger);
+  }
+
+  .dili-status-text {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .dili-status-title {
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  .dili-pill {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    height: 44px;
+    padding: 0 20px;
+    border-radius: 22px;
+    border: none;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .dili-pill:hover {
+    background: var(--color-primary-hover);
+    color: var(--color-on-primary);
+  }
+
+  .dili-pill-outline {
+    background: transparent;
+    color: var(--color-text-base);
+    border: 1px solid var(--color-border-strong);
+  }
+
+  .dili-pill-outline:hover {
+    background: var(--color-bg-subtle);
+    color: var(--color-text-base);
+  }
+
+  .dili-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .dili-section h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+
+  .dili-panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+  }
+
+  .dili-stream {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 20px 24px;
+  }
+
+  .dili-tile {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-bg-muted);
+  }
+
+  .dili-stream-text {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .dili-stream-title {
+    font-size: 17px;
+    font-weight: 600;
+  }
+
+  .dili-empty {
+    padding: 24px;
+    color: var(--color-text-muted);
+  }
+
+  .dili-link-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    color: var(--color-text-base);
+    text-decoration: none;
+  }
+
+  .dili-link-row:hover {
+    background: var(--color-bg-subtle);
+    border-radius: 16px;
+  }
+
+  .dili-row-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .dili-divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: 0 20px;
+  }
+
+  .dili-footer a {
+    color: var(--color-text-muted);
+  }
+</style>

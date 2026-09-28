@@ -340,6 +340,7 @@ workspace.windowActivated.connect(claim);
       int width = 0;  ///< Final width.
       int height = 0;  ///< Final height.
       bool made_primary = false;  ///< Whether we made the virtual screen the main screen.
+      double hz = 0;  ///< Final refresh rate.
     };
 
     /**
@@ -413,6 +414,7 @@ workspace.windowActivated.connect(claim);
         }
         session.width = mode->width;
         session.height = mode->height;
+        session.hz = mode->hz;
         BOOST_LOG(info) << "[virtual_display] Running at "sv << mode->width << "x"sv << mode->height << " at "sv << mode->hz << " Hz"sv;
       } else {
         BOOST_LOG(warning) << "[virtual_display] Could not create a matching mode, keeping KDE's default"sv;
@@ -1644,6 +1646,25 @@ namespace platf {
       list.push_back(item);
     }
     return list;
+  }
+
+  /**
+   * @brief Current state of the virtual screen, for the Home page of the web UI.
+   *
+   * @return JSON object: active, width, height, hz.
+   */
+  nlohmann::json virtual_display_status() {
+    nlohmann::json out;
+    out["active"] = false;
+    auto &sv = portal::shared_virtual();
+    std::lock_guard lock(sv.mutex);
+    if (sv.dbus && sv.vd && sv.users > 0) {
+      out["active"] = true;
+      out["width"] = sv.vd->width;
+      out["height"] = sv.vd->height;
+      out["hz"] = std::round(sv.vd->hz);
+    }
+    return out;
   }
 
   std::vector<std::string> portal_display_names(bool allow_start_timeout) {

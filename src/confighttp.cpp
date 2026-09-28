@@ -65,6 +65,7 @@ using namespace std::literals;
 #ifdef SUNSHINE_BUILD_PORTAL
 namespace platf {
   nlohmann::json kde_display_outputs();
+  nlohmann::json virtual_display_status();
 }  // namespace platf
 #endif
 
@@ -1312,6 +1313,44 @@ namespace confighttp {
   }
 
   /**
+   * @brief Get the streaming status for the Home page.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/status|:| GET|:| null}
+   */
+  void getStatus(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json output_tree;
+    output_tree["host_name"] = config::nvhttp.sunshine_name;
+    output_tree["sessions"] = rtsp_stream::session_count();
+    output_tree["virtual_enabled"] = config::video.output_name == "virtual";
+
+    std::string app_name;
+    if (const int app_id = proc::proc.running(); app_id > 0) {
+      for (const auto &app : proc::proc.get_apps()) {
+        if (app.id == std::to_string(app_id)) {
+          app_name = app.name;
+        }
+      }
+    }
+    output_tree["app"] = app_name;
+
+#ifdef SUNSHINE_BUILD_PORTAL
+    output_tree["virtual_display"] = platf::virtual_display_status();
+#else
+    output_tree["virtual_display"] = nlohmann::json {{"active", false}};
+#endif
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
    * @brief Get the screens of this PC for the Displays page.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2444,6 +2483,7 @@ namespace confighttp {
     server.resource["^/api/clients/update$"]["POST"] = updateClient;
     server.resource["^/api/config$"]["GET"] = getConfig;
     server.resource["^/api/displays$"]["GET"] = getDisplays;
+    server.resource["^/api/status$"]["GET"] = getStatus;
     server.resource["^/api/config$"]["POST"] = saveConfig;
     server.resource["^/api/configLocale$"]["GET"] = getLocale;
     server.resource["^/api/covers/([0-9]+)$"]["GET"] = getCover;
