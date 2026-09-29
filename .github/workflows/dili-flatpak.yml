@@ -1,0 +1,16 @@
+---
+name: Build Dili Flatpak
+permissions: {}
+
+on:
+  workflow_dispatch:
+
+jobs:
+  flatpak:
+    name: Flatpak
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-flatpak.yml
+    with:
+      release_commit: ${{ github.sha }}
+      release_version: "0.1.0"

@@ -19,7 +19,7 @@ jobs:
   build_linux_flatpak:
     name: ${{ matrix.arch }}
     env:
-      APP_ID: dev.lizardbyte.app.Sunshine
+      APP_ID: io.github.disresbek.Dili
       MATRIX_ARCH: ${{ matrix.arch }}
     permissions:
       contents: read
@@ -30,8 +30,6 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-22.04
-          - arch: aarch64
-            runner: ubuntu-22.04-arm
     steps:
       - name: More space
         if: matrix.arch == 'x86_64'
@@ -77,7 +75,7 @@ jobs:
 
           import yaml
 
-          manifest_path = Path("packaging/linux/flatpak/dev.lizardbyte.app.Sunshine.yml")
+          manifest_path = Path("packaging/linux/flatpak/io.github.disresbek.Dili.yml")
           manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
 
           kde_platform_version = str(manifest["runtime-version"])
@@ -220,7 +218,7 @@ jobs:
             --force-clean \
             --repo=repo \
             --sandbox \
-            --stop-at=cuda build-sunshine ${APP_ID}.yml"
+            --stop-at=ffmpeg build-sunshine ${APP_ID}.yml"
           cp -r .flatpak-builder copy-of-flatpak-builder
           sudo su "$(whoami)" -c "flatpak run org.flatpak.Builder \
             --arch=${MATRIX_ARCH} \

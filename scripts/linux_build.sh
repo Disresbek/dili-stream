@@ -785,11 +785,11 @@ function run_step_validation() {
   echo "Running step: Validation"
 
   # Run appstream validation, etc.
-  appstreamcli validate "build/dev.lizardbyte.app.Sunshine.metainfo.xml"
-  appstream-util validate "build/dev.lizardbyte.app.Sunshine.metainfo.xml"
-  desktop-file-validate "build/dev.lizardbyte.app.Sunshine.desktop"
+  appstreamcli validate "build/io.github.disresbek.Dili.metainfo.xml"
+  appstream-util validate "build/io.github.disresbek.Dili.metainfo.xml"
+  desktop-file-validate "build/io.github.disresbek.Dili.desktop"
   if [[ "$appimage_build" == 0 ]]; then
-    desktop-file-validate "build/dev.lizardbyte.app.Sunshine.terminal.desktop"
+    desktop-file-validate "build/io.github.disresbek.Dili.terminal.desktop"
   fi
   return 0
 }

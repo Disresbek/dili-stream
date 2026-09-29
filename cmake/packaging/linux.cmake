@@ -154,7 +154,7 @@ set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_RPM_PACKAGE_AUTOREQ ON)
 
 # application icon
-install(FILES "${CMAKE_SOURCE_DIR}/sunshine.svg"
+install(FILES "${CMAKE_SOURCE_DIR}/branding/dili/dili.svg"
         DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps"
         RENAME "${PROJECT_FQDN}.svg")
 

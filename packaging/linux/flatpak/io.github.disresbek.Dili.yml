@@ -48,9 +48,6 @@ modules:
   - "modules/miniupnpc.json"
   - "modules/numactl.json"
 
-  # Caching is configured until here, not including CUDA, since it is too large for GitHub cache
-  - "modules/cuda.json"
-
   # FFmpeg prebuilt binaries
   - "modules/ffmpeg.json"
 
@@ -78,21 +75,20 @@ modules:
       - -DBUILD_DOCS=OFF
       - -DBUILD_WERROR=ON
       - -DCMAKE_BUILD_TYPE=Release
-      - -DCMAKE_CUDA_COMPILER=/app/cuda/bin/nvcc
       - -DFFMPEG_PREPARED_BINARIES=/app/ffmpeg
       - -DGLAD_SKIP_PIP_INSTALL=ON
       - -DSUNSHINE_ASSETS_DIR=share/sunshine
       - -DSUNSHINE_BUILD_FLATPAK=ON
-      - -DSUNSHINE_ENABLE_CUDA=ON
+      - -DSUNSHINE_ENABLE_CUDA=OFF
       - -DSUNSHINE_ENABLE_DRM=ON
       - -DSUNSHINE_ENABLE_KWIN=ON
       - -DSUNSHINE_ENABLE_PORTAL=ON
       - -DSUNSHINE_ENABLE_WAYLAND=ON
       - -DSUNSHINE_ENABLE_X11=ON
       - -DSUNSHINE_EXECUTABLE_PATH=/app/bin/sunshine
-      - -DSUNSHINE_PUBLISHER_NAME='LizardByte'
-      - -DSUNSHINE_PUBLISHER_WEBSITE='https://app.lizardbyte.dev'
-      - -DSUNSHINE_PUBLISHER_ISSUE_URL='https://app.lizardbyte.dev/support'
+      - -DSUNSHINE_PUBLISHER_NAME='Dili'
+      - -DSUNSHINE_PUBLISHER_WEBSITE='https://github.com/Disresbek/dili-stream'
+      - -DSUNSHINE_PUBLISHER_ISSUE_URL='https://github.com/Disresbek/dili-stream/issues'
     no-make-install: false
     post-install:
       - install -D $FLATPAK_BUILDER_BUILDDIR/packaging/linux/flatpak/scripts/* /app/bin

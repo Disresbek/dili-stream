@@ -19,7 +19,7 @@ jobs:
   build_linux:
     name: ${{ matrix.name }}
     env:
-      APP_ID: dev.lizardbyte.app.Sunshine
+      APP_ID: io.github.disresbek.Dili
       M_ARCH: ${{ matrix.arch }}
       VERSION: ${{ inputs.release_version }}
     permissions:

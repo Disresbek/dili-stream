@@ -126,10 +126,19 @@ namespace portal {
      */
     inline std::string host_env() {
       std::string env = "env QT_QPA_PLATFORM=wayland";
-      for (const char *var : {"WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"}) {
+      for (const char *var : {"WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"}) {
         if (const char *value = std::getenv(var)) {
           env += std::format(" {}={}", var, value);
         }
+      }
+      // Inside a Flatpak the session bus address points into the sandbox,
+      // so hand the host its real one instead.
+      std::error_code ec;
+      const char *runtime_dir = std::getenv("XDG_RUNTIME_DIR");
+      if (std::filesystem::exists("/.flatpak-info", ec) && runtime_dir) {
+        env += std::format(" DBUS_SESSION_BUS_ADDRESS=unix:path={}/bus", runtime_dir);
+      } else if (const char *bus = std::getenv("DBUS_SESSION_BUS_ADDRESS")) {
+        env += std::format(" DBUS_SESSION_BUS_ADDRESS={}", bus);
       }
       return env + " ";
     }
@@ -1673,7 +1682,7 @@ namespace platf {
       }
       if (std::filesystem::exists("/.flatpak-info", ec)) {
         const char *app = std::getenv("FLATPAK_ID");
-        return std::format("/usr/bin/flatpak run {}", app ? app : "dev.lizardbyte.app.Sunshine");
+        return std::format("/usr/bin/flatpak run {}", app ? app : PROJECT_FQDN);
       }
       return exe;
     }

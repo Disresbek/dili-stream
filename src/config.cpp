@@ -779,7 +779,11 @@ namespace config {
     {},  // capture
     {},  // encoder
     {},  // adapter_name
+#ifdef SUNSHINE_BUILD_PORTAL
+    "virtual",  // output_name: Dili creates a virtual screen for every stream by default
+#else
     {},  // output_name
+#endif
 
     {
       video_t::dd_t::config_option_e::disabled,  // configuration_option

@@ -1,10 +1,10 @@
 [Desktop Entry]
 Categories=RemoteAccess;Network;
-Comment=@PROJECT_DESCRIPTION@
+Comment=Play the games on this PC on your TV, phone or tablet
 Exec=sunshine
 Icon=sunshine
 Keywords=gamestream;stream;moonlight;remote play;
-Name=@PROJECT_NAME@
+Name=Dili
 Terminal=true
 Type=Application
 Version=1.0
