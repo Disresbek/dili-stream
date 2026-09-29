@@ -2,8 +2,8 @@
   <Navbar></Navbar>
   <div id="content" class="container dili-page">
     <header class="dili-header">
-      <h1>Displays</h1>
-      <p>Choose what your devices see when they stream from this PC.</p>
+      <h1>Display &amp; Quality</h1>
+      <p>Choose what your devices see, and how the picture should feel.</p>
     </header>
 
     <div v-if="loading" class="dili-muted">Looking for screens…</div>
@@ -133,6 +133,33 @@
         </div>
       </section>
 
+      <section id="quality" class="dili-section">
+        <h2>Picture quality</h2>
+        <div class="dili-grid">
+          <button
+            v-for="p in presets"
+            :key="p.id"
+            type="button"
+            class="dili-card dili-card-compact"
+            :class="{ selected: currentPreset === p.id }"
+            :aria-pressed="currentPreset === p.id ? 'true' : 'false'"
+            @click="selectPreset(p.id)"
+          >
+            <div class="dili-card-top">
+              <span class="dili-card-title">{{ p.name }}</span>
+              <CircleCheck v-if="currentPreset === p.id" :size="22" class="dili-check"></CircleCheck>
+              <CircleIcon v-else :size="22" class="dili-uncheck"></CircleIcon>
+            </div>
+            <div class="dili-card-text">{{ p.text }}</div>
+            <div class="dili-card-detail">{{ p.detail }}</div>
+          </button>
+        </div>
+        <p class="dili-muted dili-hint-plain">
+          How sharp the picture is also depends on the bitrate you choose in Moonlight on each device.
+          <RouterLink to="/config">All encoder settings</RouterLink>
+        </p>
+      </section>
+
       <div class="dili-actions">
         <button type="button" class="btn btn-primary" :disabled="!dirty" @click="save">Save</button>
         <button type="button" class="btn btn-success" v-if="saved && !restarted" @click="apply">Apply now</button>
@@ -153,6 +180,31 @@
     return /ddcutil --display \d+ setvcp D6 04/.test((p && p.do) || '');
   }
 
+  // Quality presets: each sets the matching option for AMD/Intel (VAAPI), NVIDIA and software encoding
+  const PRESETS = [
+    {
+      id: 'performance',
+      name: 'Performance',
+      text: 'The lowest delay. Best for fast games and busy Wi-Fi.',
+      detail: 'Fastest encoding',
+      values: { vaapi_quality: 'speed', nvenc_preset: '1', sw_preset: 'ultrafast' },
+    },
+    {
+      id: 'balanced',
+      name: 'Balanced',
+      text: 'Sharp picture with low delay. The right choice for most people.',
+      detail: 'Recommended',
+      values: { vaapi_quality: 'balanced', nvenc_preset: '3', sw_preset: 'superfast' },
+    },
+    {
+      id: 'quality',
+      name: 'Quality',
+      text: 'The cleanest picture. Best on a wired network or for slower games.',
+      detail: 'Best picture, slightly more delay',
+      values: { vaapi_quality: 'quality', nvenc_preset: '6', sw_preset: 'veryfast' },
+    },
+  ];
+
   export default {
     components: {
       Navbar,
@@ -161,6 +213,7 @@
     },
     data() {
       return {
+        presets: PRESETS,
         monitors: { available: false, monitors: [] },
         monitorsLoaded: false,
         loading: true,
@@ -173,6 +226,12 @@
       };
     },
     computed: {
+      currentPreset() {
+        const q = this.config.vaapi_quality;
+        if (q === 'speed') return 'performance';
+        if (q === 'quality') return 'quality';
+        return 'balanced';
+      },
       prepList() {
         try {
           const list = JSON.parse(this.config.global_prep_cmd || '[]');
@@ -221,6 +280,12 @@
       }
     },
     methods: {
+      selectPreset(id) {
+        if (this.currentPreset === id && this.config.vaapi_quality) return;
+        Object.assign(this.config, PRESETS.find((p) => p.id === id).values);
+        this.dirty = true;
+        this.saved = false;
+      },
       toggleMonitorsOff() {
         // Dili's own entries in the commands that run for every app
         let list = this.prepList.filter((p) => !isMonitorOff(p));
@@ -458,5 +523,25 @@
     align-items: center;
     gap: 12px;
     flex-wrap: wrap;
+  }
+  .dili-card-compact {
+    gap: 10px;
+  }
+
+  .dili-card-detail {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-base);
+  }
+
+  .dili-hint-plain {
+    margin: 0;
+    font-size: 14px;
+  }
+
+  .dili-hint-plain a {
+    color: var(--color-primary);
+    font-weight: 600;
+    margin-left: 4px;
   }
 </style>

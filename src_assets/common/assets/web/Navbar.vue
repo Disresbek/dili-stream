@@ -12,9 +12,6 @@
         <RouterLink class="dili-nav-item" to="/displays" active-class="active">
           <Monitor :size="20"></Monitor><span>{{ $t('navbar.displays') }}</span>
         </RouterLink>
-        <RouterLink class="dili-nav-item" to="/quality" active-class="active">
-          <Gauge :size="20"></Gauge><span>{{ $t('navbar.quality') }}</span>
-        </RouterLink>
         <RouterLink class="dili-nav-item" to="/devices" active-class="active">
           <MonitorSmartphone :size="20"></MonitorSmartphone><span>{{ $t('navbar.devices') }}</span>
         </RouterLink>
@@ -73,7 +70,7 @@
 </template>
 
 <script>
-import { CircleUserRound, Gauge, Home, Info, Layers, LogOut, Monitor, MonitorSmartphone, Settings, Shield, Star } from '@lucide/vue'
+import { CircleUserRound, Home, Info, Layers, LogOut, Monitor, MonitorSmartphone, Settings, Shield, Star } from '@lucide/vue'
 import DiliThemeSwitch from './DiliThemeSwitch.vue'
 import DiliLogo from './DiliLogo.vue'
 import Notification from './Notification.vue'
@@ -92,8 +89,7 @@ export default {
     CircleUserRound,
     LogOut,
     Monitor,
-    MonitorSmartphone,
-    Gauge
+    MonitorSmartphone
   },
   data() {
     return {
