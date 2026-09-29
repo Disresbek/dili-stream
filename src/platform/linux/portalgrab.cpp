@@ -1845,22 +1845,43 @@ echo done
     };
 
     nlohmann::json list = nlohmann::json::array();
-    auto add = [&](const std::string &id, const std::string &base, const std::string &args, const std::string &undo_args, const std::string &image) {
+    // detached: how to open it, undo: how to close it again when the stream ends
+    auto add = [&](const std::string &id, const std::string &name, const std::string &detached, const std::string &undo, const std::string &image) {
       nlohmann::json item;
       item["id"] = id;
-      item["installed"] = !base.empty();
-      item["detached"] = base.empty() ? "" : base + args;
-      item["undo"] = (base.empty() || undo_args.empty()) ? "" : base + undo_args;
+      item["name"] = name;
+      item["installed"] = !detached.empty();
+      item["detached"] = detached;
+      item["undo"] = detached.empty() ? "" : undo;
       item["image"] = image;
       list.push_back(item);
     };
 
+    // A program installed normally, or as a Flatpak: returns {open, close} commands, or empties
+    auto launcher = [&](const std::string &native, const std::string &flatpak_id, const std::string &native_close) -> std::pair<std::string, std::string> {
+      if (!native.empty() && has_command(native)) {
+        return {prefix + native, prefix + native_close};
+      }
+      if (!flatpak_id.empty() && has_flatpak(flatpak_id)) {
+        return {prefix + "flatpak run " + flatpak_id, prefix + "flatpak kill " + flatpak_id};
+      }
+      return {"", ""};
+    };
+
     const auto steam = starter("steam", "com.valvesoftware.Steam");
-    add("steam-big-picture", steam, " steam://open/bigpicture", " steam://close/bigpicture", "steam.png");
-    add("steam", steam, " steam://open/games", "", "steam.png");
-    add("heroic", starter("heroic", "com.heroicgameslauncher.hgl"), "", "", "");
-    add("lutris", starter("lutris", "net.lutris.Lutris"), "", "", "");
-    add("retrodeck", starter("retrodeck", "net.retrodeck.retrodeck"), "", "", "");
+    add("steam-big-picture", "Steam Big Picture",
+        steam.empty() ? "" : steam + " steam://open/bigpicture",
+        steam.empty() ? "" : steam + " steam://close/bigpicture", "steam.png");
+
+    const auto lutris = launcher("lutris", "net.lutris.Lutris", "pkill -f lutris");
+    add("lutris", "Lutris", lutris.first, lutris.second, "");
+
+    const auto heroic = launcher("heroic", "com.heroicgameslauncher.hgl", "pkill -f heroic");
+    add("heroic", "Heroic Games Launcher", heroic.first, heroic.second, "");
+
+    const auto retrodeck = launcher("retrodeck", "net.retrodeck.retrodeck", "pkill -f retrodeck");
+    add("retrodeck", "RetroDECK", retrodeck.first, retrodeck.second, "");
+
     return list;
   }
 

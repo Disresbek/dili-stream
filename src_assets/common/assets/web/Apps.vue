@@ -8,162 +8,233 @@
 
     <div v-if="loading" class="dili-muted">Loading…</div>
 
+    <!-- ===================== Editor ===================== -->
     <template v-else-if="editing">
-      <!-- Simple editor -->
-      <section class="dili-panel dili-editor">
-        <h2 class="dili-editor-title">{{ editing.index === -1 ? 'Add an app' : (editing.lockName ? 'Picture for ' : 'Edit ') + (editing.original.name || 'app') }}</h2>
-
-        <div class="dili-picture">
-          <div class="dili-picture-preview">
-            <img v-if="editing.index !== -1 && !editing.pictureChanged" :src="`./api/covers/${editing.index}`" alt="">
-            <img v-else-if="editing.pictureUrl" :src="editing.pictureUrl" alt="">
-          </div>
-          <div class="dili-picture-side">
-            <div class="dili-row-title">Picture</div>
-            <div class="dili-help">This picture is shown for the app in Moonlight.</div>
-            <button type="button" class="dili-pill dili-pill-outline dili-pill-small" @click="openCoverSearch">Find a picture</button>
-          </div>
-        </div>
-
-        <div v-if="coverSearch" class="dili-covers">
-          <div class="dili-cover-search">
-            <input v-model="coverSearch.query" type="text" placeholder="Game name" @keyup.enter="runCoverSearch">
-            <button type="button" class="dili-pill dili-pill-small" @click="runCoverSearch">Search</button>
-          </div>
-          <div v-if="coverSearch.loading" class="dili-help">Searching…</div>
-          <div v-else-if="coverSearch.results.length === 0" class="dili-help">No pictures found. Try a shorter name.</div>
-          <div class="dili-cover-grid">
-            <button
-              v-for="c in coverSearch.results"
-              :key="c.key"
-              type="button"
-              class="dili-cover-pick"
-              :title="c.name"
-              @click="pickCover(c)"
-            >
-              <img :src="c.url" :alt="c.name" loading="lazy">
-            </button>
-          </div>
-        </div>
-
-        <div class="dili-field" v-if="!editing.lockName">
-          <label for="appName">Name</label>
-          <input id="appName" v-model="editing.name" type="text" placeholder="For example: Cyberpunk 2077">
-          <span class="dili-help">This is what you see in Moonlight.</span>
-        </div>
-
-        <div class="dili-field" v-if="!editing.lockName">
-          <label for="appCommand">Program to start</label>
-          <input id="appCommand" v-model="editing.command" type="text" placeholder="For example: steam steam://rungameid/1091500">
-          <span class="dili-help">Leave this empty to just show your desktop.</span>
-        </div>
-
-        <div class="dili-toggle-row" v-if="!editing.lockName">
-          <div>
-            <div class="dili-row-title">Close it when the stream ends</div>
-            <div class="dili-help">When you stop streaming, Dili closes the program. If you quit the program, the stream ends too.</div>
-          </div>
-          <button
-            type="button"
-            class="dili-switch"
-            :class="{ on: editing.closeOnEnd }"
-            :aria-pressed="editing.closeOnEnd ? 'true' : 'false'"
-            aria-label="Close it when the stream ends"
-            @click="editing.closeOnEnd = !editing.closeOnEnd"
-          >
-            <span></span>
-          </button>
-        </div>
-
-        <p v-if="editing.hasAdvanced" class="dili-help">
-          This app has extra settings from the advanced editor. They are kept when you save here.
-        </p>
-        <p v-if="error" class="dili-error">{{ error }}</p>
-
-        <div class="dili-editor-actions">
-          <button
-            v-if="editing.index !== -1 && !editing.lockName"
-            type="button"
-            class="dili-pill dili-pill-danger"
-            @click="removeEditing"
-          >
-            {{ confirmDelete ? 'Tap again to remove' : 'Remove app' }}
-          </button>
-          <span class="dili-grow"></span>
-          <button type="button" class="dili-pill dili-pill-outline" @click="cancelEdit">Cancel</button>
+      <section class="dili-editor">
+        <!-- Top bar, like an iOS sheet -->
+        <div class="dili-editor-bar">
+          <button type="button" class="dili-text-btn" @click="cancelEdit">Cancel</button>
+          <h2>{{ editing.index === -1 ? 'New app' : (editing.lockName ? 'Picture' : editing.original.name || 'App') }}</h2>
           <button type="button" class="dili-pill" :disabled="(!editing.lockName && !editing.name.trim()) || busy" @click="saveEditing">Save</button>
         </div>
+        <p v-if="error" class="dili-error">{{ error }}</p>
 
-        <RouterLink to="/apps/advanced" class="dili-advanced">
-          <ChevronRight :size="18"></ChevronRight>
-          Advanced app settings
-        </RouterLink>
+        <div class="dili-editor-body">
+          <!-- Left: picture -->
+          <aside class="dili-editor-side">
+            <div class="dili-cover dili-cover-large">
+              <img v-if="editing.pictureUrl" :src="editing.pictureUrl" alt="">
+              <img v-else-if="editing.index !== -1" :src="`./api/covers/${editing.index}`" alt="" @error="$event.target.style.display = 'none'">
+            </div>
+            <button type="button" class="dili-pill dili-pill-outline dili-full" @click="openCoverSearch">Find a picture</button>
+            <button type="button" class="dili-text-btn dili-full" @click="openBrowser('file', pickLocalPicture)">Use a picture from this PC</button>
+            <p class="dili-help dili-center">Shown for this app in Moonlight.</p>
+          </aside>
+
+          <!-- Right: settings -->
+          <div class="dili-editor-main">
+            <div v-if="coverSearch" class="dili-group">
+              <div class="dili-group-row">
+                <input v-model="coverSearch.query" type="text" class="dili-input" placeholder="Game name" @keyup.enter="runCoverSearch">
+                <button type="button" class="dili-pill dili-pill-small" @click="runCoverSearch">Search</button>
+                <button type="button" class="dili-icon-btn" aria-label="Close" @click="coverSearch = null"><X :size="18"></X></button>
+              </div>
+              <div class="dili-group-pad">
+                <div v-if="coverSearch.loading" class="dili-help">Searching…</div>
+                <div v-else-if="coverSearch.results.length === 0" class="dili-help">No pictures found. Try a shorter name.</div>
+                <div class="dili-cover-grid">
+                  <button v-for="c in coverSearch.results" :key="c.key" type="button" class="dili-cover-pick" :title="c.name" @click="pickCover(c)">
+                    <img :src="c.url" :alt="c.name" loading="lazy">
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="browser" class="dili-group">
+              <div class="dili-group-row">
+                <button type="button" class="dili-icon-btn" :disabled="!browser.parent" aria-label="Up one folder" @click="browse(browser.parent)"><ArrowUp :size="18"></ArrowUp></button>
+                <span class="dili-browser-path">{{ browser.path || '/' }}</span>
+                <button v-if="browser.type === 'directory'" type="button" class="dili-pill dili-pill-small" @click="chooseBrowsed(browser.path)">Choose this folder</button>
+                <button type="button" class="dili-icon-btn" aria-label="Close" @click="browser = null"><X :size="18"></X></button>
+              </div>
+              <div v-if="browser.error" class="dili-group-pad dili-error">{{ browser.error }}</div>
+              <div class="dili-browser-list">
+                <button v-for="e in browser.entries" :key="e.path" type="button" class="dili-browser-item" @click="e.type === 'directory' ? browse(e.path) : chooseBrowsed(e.path)">
+                  <Folder v-if="e.type === 'directory'" :size="18"></Folder>
+                  <FileIcon v-else :size="18"></FileIcon>
+                  <span>{{ e.name }}</span>
+                </button>
+                <div v-if="!browser.loading && browser.entries.length === 0" class="dili-group-pad dili-help">This folder is empty.</div>
+              </div>
+            </div>
+
+            <template v-if="!editing.lockName">
+              <!-- Basics -->
+              <div class="dili-group">
+                <label class="dili-group-row dili-labeled">
+                  <span class="dili-row-label">Name</span>
+                  <input v-model="editing.name" type="text" class="dili-input" placeholder="As shown in Moonlight">
+                </label>
+                <div class="dili-divider"></div>
+                <div class="dili-group-row dili-labeled">
+                  <span class="dili-row-label">Program</span>
+                  <input v-model="editing.command" type="text" class="dili-input" placeholder="Leave empty for the desktop">
+                  <button type="button" class="dili-pill dili-pill-outline dili-pill-small" @click="openBrowser('file', (p) => (editing.command = quote(p)))">Browse…</button>
+                </div>
+                <div class="dili-divider"></div>
+                <div class="dili-group-row">
+                  <div class="dili-grow">
+                    <div class="dili-row-title">Close it when the stream ends</div>
+                    <div class="dili-help">If you quit the program, the stream ends too.</div>
+                  </div>
+                  <button type="button" class="dili-switch" :class="{ on: editing.closeOnEnd }" :aria-pressed="editing.closeOnEnd ? 'true' : 'false'"
+                          aria-label="Close it when the stream ends" @click="editing.closeOnEnd = !editing.closeOnEnd"><span></span></button>
+                </div>
+              </div>
+
+              <!-- More options -->
+              <button type="button" class="dili-disclosure" :aria-expanded="showMore ? 'true' : 'false'" @click="showMore = !showMore">
+                <ChevronRight :size="18" :class="{ open: showMore }"></ChevronRight>
+                More options
+              </button>
+
+              <template v-if="showMore">
+                <div class="dili-group-title">When the stream starts and ends</div>
+                <div class="dili-group">
+                  <div class="dili-group-row dili-pair-head">
+                    <span>At the start</span><span>At the end</span><span></span>
+                  </div>
+                  <template v-for="(row, i) in editing.prep" :key="'p' + i">
+                    <div class="dili-divider"></div>
+                    <div class="dili-group-row dili-pair">
+                      <input v-model="row.do" type="text" class="dili-input" placeholder="Optional">
+                      <input v-model="row.undo" type="text" class="dili-input" placeholder="Optional">
+                      <button type="button" class="dili-icon-btn" aria-label="Remove" @click="editing.prep.splice(i, 1)"><X :size="18"></X></button>
+                    </div>
+                  </template>
+                  <div class="dili-divider"></div>
+                  <button type="button" class="dili-group-row dili-add-row" @click="editing.prep.push({ do: '', undo: '' })">+ Add a command</button>
+                </div>
+                <p class="dili-group-note">For example, turn a monitor off at the start and back on at the end.</p>
+
+                <div class="dili-group-title">Also open in the background</div>
+                <div class="dili-group">
+                  <template v-for="(cmd, i) in editing.background" :key="'b' + i">
+                    <div class="dili-group-row">
+                      <input v-model="editing.background[i]" type="text" class="dili-input" placeholder="Program">
+                      <button type="button" class="dili-icon-btn" aria-label="Remove" @click="editing.background.splice(i, 1)"><X :size="18"></X></button>
+                    </div>
+                    <div class="dili-divider"></div>
+                  </template>
+                  <button type="button" class="dili-group-row dili-add-row" @click="editing.background.push('')">+ Add a program</button>
+                </div>
+                <p class="dili-group-note">Programs that start with the app and keep running on their own.</p>
+
+                <div class="dili-group-title">Behavior</div>
+                <div class="dili-group">
+                  <div class="dili-group-row dili-labeled">
+                    <span class="dili-row-label">Start in</span>
+                    <input v-model="editing.workingDir" type="text" class="dili-input" placeholder="Folder, usually not needed">
+                    <button type="button" class="dili-pill dili-pill-outline dili-pill-small" @click="openBrowser('directory', (p) => (editing.workingDir = p))">Browse…</button>
+                  </div>
+                  <div class="dili-divider"></div>
+                  <div class="dili-group-row">
+                    <div class="dili-grow">
+                      <div class="dili-row-title">Keep streaming if the program closes right away</div>
+                      <div class="dili-help">For launchers that open another window and then close themselves.</div>
+                    </div>
+                    <button type="button" class="dili-switch" :class="{ on: editing.autoDetach }" @click="editing.autoDetach = !editing.autoDetach"
+                            :aria-pressed="editing.autoDetach ? 'true' : 'false'" aria-label="Keep streaming if the program closes right away"><span></span></button>
+                  </div>
+                  <div class="dili-divider"></div>
+                  <div class="dili-group-row">
+                    <div class="dili-grow">
+                      <div class="dili-row-title">Wait for every part of the program</div>
+                      <div class="dili-help">Keep streaming until all its windows have closed, not just the first one.</div>
+                    </div>
+                    <button type="button" class="dili-switch" :class="{ on: editing.waitAll }" @click="editing.waitAll = !editing.waitAll"
+                            :aria-pressed="editing.waitAll ? 'true' : 'false'" aria-label="Wait for every part of the program"><span></span></button>
+                  </div>
+                  <div class="dili-divider"></div>
+                  <div class="dili-group-row">
+                    <div class="dili-grow">
+                      <div class="dili-row-title">Use the commands for all apps</div>
+                      <div class="dili-help">Also run the start and end commands set up for every app.</div>
+                    </div>
+                    <button type="button" class="dili-switch" :class="{ on: editing.globalPrep }" @click="editing.globalPrep = !editing.globalPrep"
+                            :aria-pressed="editing.globalPrep ? 'true' : 'false'" aria-label="Use the commands for all apps"><span></span></button>
+                  </div>
+                  <div class="dili-divider"></div>
+                  <label class="dili-group-row">
+                    <span class="dili-grow dili-row-title">Seconds to wait when closing it</span>
+                    <input v-model.number="editing.exitTimeout" type="number" min="0" max="120" class="dili-input dili-input-small">
+                  </label>
+                </div>
+
+                <div class="dili-group-title">Troubleshooting</div>
+                <div class="dili-group">
+                  <div class="dili-group-row dili-labeled">
+                    <span class="dili-row-label">Log file</span>
+                    <input v-model="editing.output" type="text" class="dili-input" placeholder="Save the program's messages to a file">
+                  </div>
+                </div>
+              </template>
+
+              <div v-if="editing.index !== -1" class="dili-group dili-danger-group">
+                <button type="button" class="dili-group-row dili-danger-row" @click="removeEditing">
+                  {{ confirmDelete ? 'Tap again to remove this app' : 'Remove app' }}
+                </button>
+              </div>
+            </template>
+          </div>
+        </div>
       </section>
     </template>
 
+    <!-- ===================== Lists ===================== -->
     <template v-else>
-      <!-- Ready-made apps -->
       <section class="dili-section">
         <h2>Ready-made apps</h2>
-        <p class="dili-help">Switch on the apps you want to see in Moonlight. Dili sets them up for you.</p>
+        <p class="dili-help">Found on this PC. Switch on the ones you want to see in Moonlight, and Dili sets them up for you.</p>
         <div class="dili-panel">
-          <template v-for="(preset, i) in presets" :key="preset.name">
+          <template v-for="(preset, i) in installedPresets" :key="preset.id">
             <div v-if="i > 0" class="dili-divider"></div>
             <div class="dili-toggle-row">
               <div class="dili-preset">
-                <img :src="preset.icon" alt="" class="dili-preset-img">
+                <img v-if="preset.icon" :src="preset.icon" alt="" class="dili-preset-img">
+                <div v-else class="dili-preset-img dili-preset-letter">{{ preset.app.name.charAt(0) }}</div>
                 <div>
-                  <div class="dili-row-title">{{ preset.name }}</div>
-                  <div class="dili-help">{{ preset.text }}</div>
+                  <div class="dili-row-title">{{ preset.app.name }}</div>
+                  <div class="dili-help">{{ preset.description }}</div>
                 </div>
               </div>
               <div class="dili-preset-side">
-                <button
-                  v-if="presetIndex(preset) !== -1"
-                  type="button"
-                  class="dili-link"
-                  @click="startEdit(presetIndex(preset), true)"
-                >
-                  Picture
-                </button>
-                <span class="dili-state">{{ presetIndex(preset) !== -1 ? 'In Moonlight' : (preset.installed ? 'Off' : 'Not installed') }}</span>
-              <button
-                type="button"
-                class="dili-switch"
-                :class="{ on: presetIndex(preset) !== -1 }"
-                :aria-pressed="presetIndex(preset) !== -1 ? 'true' : 'false'"
-                :aria-label="preset.name"
-                :disabled="busy || (!preset.installed && presetIndex(preset) === -1)"
-                @click="togglePreset(preset)"
-              >
-                <span></span>
-              </button>
+                <button v-if="presetIndex(preset) !== -1" type="button" class="dili-link" @click="startEdit(presetIndex(preset), true)">Picture</button>
+                <span class="dili-state" :class="{ on: presetIndex(preset) !== -1 }">{{ presetIndex(preset) !== -1 ? 'In Moonlight' : 'Not added' }}</span>
+                <button type="button" class="dili-switch" :class="{ on: presetIndex(preset) !== -1 }"
+                        :aria-pressed="presetIndex(preset) !== -1 ? 'true' : 'false'" :aria-label="'Show ' + preset.app.name + ' in Moonlight'"
+                        :disabled="busy" @click="togglePreset(preset)"><span></span></button>
               </div>
             </div>
           </template>
         </div>
+        <p v-if="missingPresets.length" class="dili-help">
+          Not found on this PC: {{ missingPresets.map((p) => p.app.name).join(', ') }}. Install them and they show up here.
+        </p>
         <p class="dili-help">Moonlight shows changes the next time you open your PC in Moonlight.</p>
       </section>
 
-      <!-- Own apps -->
       <section class="dili-section">
         <h2>Your apps</h2>
         <div class="dili-grid">
-          <button
-            v-for="app in ownApps"
-            :key="app.index"
-            type="button"
-            class="dili-app"
-            @click="startEdit(app.index)"
-          >
+          <button v-for="app in ownApps" :key="app.index" type="button" class="dili-app" @click="startEdit(app.index)">
             <div class="dili-cover">
-              <img :src="`./api/covers/${app.index}`" :alt="''" loading="lazy" @error="$event.target.style.display = 'none'">
+              <img :src="`./api/covers/${app.index}`" alt="" loading="lazy" @error="$event.target.style.display = 'none'">
               <span v-if="runningApp === app.name" class="dili-live">Playing now</span>
             </div>
             <div class="dili-app-name">{{ app.name }}</div>
-            <div class="dili-help dili-ellipsis">{{ commandOf(app) || 'Desktop only' }}</div>
+            <div class="dili-help dili-ellipsis">{{ summaryOf(app) }}</div>
           </button>
-
           <button type="button" class="dili-app dili-add" @click="startAdd">
             <Plus :size="32"></Plus>
             <div class="dili-app-name">Add an app</div>
@@ -177,26 +248,19 @@
 <script>
   import Navbar from './Navbar.vue'
   import { apiFetch } from './fetch_utils'
-  import { loadPresets } from './presets'
+  import { loadPresets, saveApp as savePresetApp } from './presets'
   import { searchCovers, useCover } from './covers'
-  import { ChevronRight, Plus } from '@lucide/vue'
-
-  // Ready-made apps (shared with the setup wizard), shown with their picture
-  function toCards(presets) {
-    return presets.map((p) => ({
-      name: p.app.name,
-      text: p.installed === false ? 'Steam is not installed on this PC.' : p.description,
-      installed: p.installed !== false,
-      icon: `./assets/apps/${p.app['image-path']}`,
-      app: p.app,
-    }));
-  }
+  import { ArrowUp, ChevronRight, File as FileIcon, Folder, Plus, X } from '@lucide/vue'
 
   export default {
     components: {
       Navbar,
+      ArrowUp,
       ChevronRight,
+      FileIcon,
+      Folder,
       Plus,
+      X,
     },
     data() {
       return {
@@ -205,23 +269,29 @@
         presets: [],
         runningApp: '',
         editing: null,
+        showMore: false,
         coverSearch: null,
+        browser: null,
         confirmDelete: false,
         busy: false,
         error: '',
       };
     },
     computed: {
+      installedPresets() {
+        return this.presets.filter((p) => p.installed || this.presetIndex(p) !== -1);
+      },
+      missingPresets() {
+        return this.presets.filter((p) => !p.installed && this.presetIndex(p) === -1);
+      },
       ownApps() {
-        const presetNames = this.presets.map((p) => p.name);
-        return this.apps
-          .map((app, index) => ({ ...app, index }))
-          .filter((app) => !presetNames.includes(app.name));
+        const presetNames = this.presets.map((p) => p.app.name);
+        return this.apps.map((app, index) => ({ ...app, index })).filter((app) => !presetNames.includes(app.name));
       },
     },
     async created() {
       try {
-        this.presets = toCards(await loadPresets());
+        this.presets = await loadPresets();
         const status = await fetch('./api/status').then((r) => r.json());
         this.runningApp = status.app || '';
       } catch (e) {
@@ -236,27 +306,24 @@
         this.apps = r.apps || [];
       },
       presetIndex(preset) {
-        return this.apps.findIndex((a) => a.name === preset.name);
+        return this.apps.findIndex((a) => a.name === preset.app.name);
       },
       commandOf(app) {
         if (app.cmd) return app.cmd;
         if (app.detached && app.detached.length) return app.detached[0];
         return '';
       },
-      async saveApp(app, index) {
-        const body = { 'prep-cmd': [], detached: [], ...app, index };
-        const r = await apiFetch('./api/apps', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        return r.status === 200;
+      summaryOf(app) {
+        const cmd = this.commandOf(app);
+        if (cmd) return cmd;
+        const firstDo = (app['prep-cmd'] || []).map((p) => p.do).find(Boolean);
+        return firstDo || 'Desktop only';
+      },
+      quote(path) {
+        return /\s/.test(path) ? `"${path}"` : path;
       },
       async deleteApp(index) {
-        const r = await apiFetch('./api/apps/' + index, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-        });
+        const r = await apiFetch('./api/apps/' + index, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } });
         return r.status === 200;
       },
       async togglePreset(preset) {
@@ -264,7 +331,7 @@
         try {
           const index = this.presetIndex(preset);
           if (index === -1) {
-            await this.saveApp(preset.app, -1);
+            await savePresetApp(preset.app, -1);
           } else {
             await this.deleteApp(index);
           }
@@ -273,102 +340,84 @@
           this.busy = false;
         }
       },
-      openCoverSearch() {
-        this.coverSearch = { query: this.editing.name || '', loading: false, results: [] };
-        this.runCoverSearch();
-      },
-      async runCoverSearch() {
-        const q = this.coverSearch.query.trim();
-        if (!q) return;
-        this.coverSearch.loading = true;
-        try {
-          this.coverSearch.results = await searchCovers(q);
-        } catch (e) {
-          this.coverSearch.results = [];
-        } finally {
-          this.coverSearch.loading = false;
-        }
-      },
-      async pickCover(cover) {
-        try {
-          this.editing.imagePath = await useCover(cover);
-          this.editing.pictureUrl = cover.url;
-          this.editing.pictureChanged = true;
-          this.coverSearch = null;
-        } catch (e) {
-          this.error = 'The picture could not be downloaded. Please try another one.';
-        }
-      },
+
+      // ---------- editor ----------
       startAdd() {
-        this.error = '';
-        this.confirmDelete = false;
-        this.coverSearch = null;
-        this.editing = { index: -1, original: {}, name: '', command: '', closeOnEnd: true, hasAdvanced: false, lockName: false, imagePath: '', pictureUrl: '', pictureChanged: false };
+        this.resetEditorState();
+        this.editing = this.makeEditing(-1, {}, false);
       },
       startEdit(index, lockName = false) {
-        const app = this.apps[index];
-        this.coverSearch = null;
+        this.resetEditorState();
+        this.editing = this.makeEditing(index, this.apps[index], lockName);
+        // Show the extra options right away when the app already uses them
+        this.showMore = !lockName && (this.editing.prep.length > 0 || this.editing.background.length > 0 || !!this.editing.workingDir);
+      },
+      resetEditorState() {
         this.error = '';
         this.confirmDelete = false;
-        const hasPrep = (app['prep-cmd'] || []).length > 0;
-        const manyDetached = (app.detached || []).length > 1;
-        this.editing = {
+        this.coverSearch = null;
+        this.browser = null;
+        this.showMore = false;
+      },
+      makeEditing(index, app, lockName) {
+        const detached = app.detached || [];
+        const usesCmd = !!app.cmd;
+        return {
           index,
           original: app,
+          lockName,
           name: app.name || '',
           command: this.commandOf(app),
-          closeOnEnd: !!app.cmd || !(app.detached && app.detached.length),
-          hasAdvanced: !lockName && (hasPrep || manyDetached),
-          lockName,
+          closeOnEnd: usesCmd || detached.length === 0,
+          prep: (app['prep-cmd'] || []).map((p) => ({ do: p.do || '', undo: p.undo || '' })),
+          background: usesCmd ? [...detached] : detached.slice(1),
+          workingDir: app['working-dir'] || '',
+          autoDetach: app['auto-detach'] !== false,
+          waitAll: app['wait-all'] !== false,
+          globalPrep: !app['exclude-global-prep-cmd'],
+          exitTimeout: app['exit-timeout'] ?? 5,
+          output: app.output || '',
           imagePath: '',
           pictureUrl: '',
-          pictureChanged: false,
         };
       },
       cancelEdit() {
         this.editing = null;
+        this.browser = null;
+      },
+      buildApp() {
+        const e = this.editing;
+        const app = { ...e.original };
+        if (e.imagePath) app['image-path'] = e.imagePath;
+        if (e.lockName) return app;
+
+        app.name = e.name.trim();
+        const command = e.command.trim();
+        const background = e.background.map((c) => c.trim()).filter(Boolean);
+        delete app.cmd;
+        if (command && e.closeOnEnd) {
+          app.cmd = command;
+          app.detached = background;
+        } else {
+          app.detached = command ? [command, ...background] : background;
+        }
+        app['prep-cmd'] = e.prep.map((p) => ({ do: p.do.trim(), undo: p.undo.trim() })).filter((p) => p.do || p.undo);
+        if (e.workingDir.trim()) app['working-dir'] = e.workingDir.trim();
+        else delete app['working-dir'];
+        app['auto-detach'] = e.autoDetach;
+        app['wait-all'] = e.waitAll;
+        app['exclude-global-prep-cmd'] = !e.globalPrep;
+        app['exit-timeout'] = Number.isFinite(e.exitTimeout) ? e.exitTimeout : 5;
+        if (e.output.trim()) app.output = e.output.trim();
+        else delete app.output;
+        if (!app['image-path']) app['image-path'] = command ? 'box.png' : 'desktop.png';
+        return app;
       },
       async saveEditing() {
-        const e = this.editing;
-        if (e.lockName) {
-          const app = { ...e.original };
-          if (e.imagePath) app['image-path'] = e.imagePath;
-          this.busy = true;
-          try {
-            if (await this.saveApp(app, e.index)) {
-              await this.loadApps();
-              this.editing = null;
-            } else {
-              this.error = 'Saving did not work. Please try again.';
-            }
-          } finally {
-            this.busy = false;
-          }
-          return;
-        }
-        const app = { ...e.original, name: e.name.trim() };
-        const command = e.command.trim();
-        // One simple rule: "close on end" means Dili watches the program (cmd), otherwise it just starts it (detached)
-        const otherDetached = (app.detached || []).slice(1);
-        delete app.cmd;
-        app.detached = otherDetached;
-        if (command) {
-          if (e.closeOnEnd) {
-            app.cmd = command;
-          } else {
-            app.detached = [command, ...otherDetached];
-          }
-        }
-        if (e.imagePath) {
-          app['image-path'] = e.imagePath;
-        }
-        if (!app['image-path']) {
-          app['image-path'] = command ? 'box.png' : 'desktop.png';
-        }
         this.busy = true;
         this.error = '';
         try {
-          if (await this.saveApp(app, e.index)) {
+          if (await savePresetApp(this.buildApp(), this.editing.index)) {
             await this.loadApps();
             this.editing = null;
           } else {
@@ -392,6 +441,69 @@
         } finally {
           this.busy = false;
         }
+      },
+
+      // ---------- pictures ----------
+      openCoverSearch() {
+        this.coverSearch = { query: this.editing.name || this.editing.original.name || '', loading: false, results: [] };
+        this.runCoverSearch();
+      },
+      async runCoverSearch() {
+        const q = this.coverSearch.query.trim();
+        if (!q) return;
+        this.coverSearch.loading = true;
+        try {
+          this.coverSearch.results = await searchCovers(q);
+        } catch (e) {
+          this.coverSearch.results = [];
+        } finally {
+          this.coverSearch.loading = false;
+        }
+      },
+      async pickCover(cover) {
+        try {
+          this.editing.imagePath = await useCover(cover);
+          this.editing.pictureUrl = cover.url;
+          this.coverSearch = null;
+        } catch (e) {
+          this.error = 'The picture could not be downloaded. Please try another one.';
+        }
+      },
+
+      pickLocalPicture(path) {
+        this.editing.imagePath = path;
+        this.editing.pictureUrl = '';
+        this.error = /\.png$/i.test(path) ? '' : 'Moonlight needs a PNG picture. Please choose a .png file.';
+        if (this.error) this.editing.imagePath = '';
+      },
+
+      // ---------- file browser ----------
+      openBrowser(type, onPick) {
+        this.browser = { type, onPick, path: '', parent: '', entries: [], loading: false, error: '' };
+        this.browse('');
+      },
+      async browse(path) {
+        const b = this.browser;
+        b.loading = true;
+        b.error = '';
+        try {
+          const params = new URLSearchParams({ type: b.type });
+          if (path) params.set('path', path);
+          const r = await fetch(`./api/browse?${params.toString()}`);
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error || 'This folder cannot be opened.');
+          b.path = data.path || '';
+          b.parent = data.parent || '';
+          b.entries = data.entries || [];
+        } catch (e) {
+          b.error = e.message;
+        } finally {
+          b.loading = false;
+        }
+      },
+      chooseBrowsed(path) {
+        this.browser.onPick(path);
+        this.browser = null;
       },
     },
   };
@@ -588,13 +700,6 @@
     color: var(--color-text-muted);
   }
 
-  .dili-editor {
-    padding: 28px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-    max-width: 640px;
-  }
 
   .dili-editor-title {
     margin: 0;
@@ -805,5 +910,372 @@
     width: 100%;
     height: 100%;
     object-fit: cover;
+  }
+  .dili-state {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    min-width: 92px;
+    text-align: right;
+  }
+
+  .dili-state.on {
+    color: var(--color-success);
+  }
+
+  .dili-preset-letter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--color-text-muted);
+  }
+
+  .dili-inline {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .dili-inline input,
+  .dili-pair input,
+  .dili-narrow input {
+    flex-grow: 1;
+    min-width: 0;
+    height: 42px;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-bg-base);
+    color: var(--color-text-base);
+    font: inherit;
+  }
+
+  .dili-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .dili-narrow input {
+    max-width: 120px;
+  }
+
+  .dili-icon-btn {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border-strong);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--color-text-base);
+    cursor: pointer;
+  }
+
+  .dili-icon-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .dili-disclosure {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-text-base);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .dili-disclosure svg {
+    transition: transform 0.15s ease;
+  }
+
+  .dili-disclosure svg.open {
+    transform: rotate(90deg);
+  }
+
+  .dili-more {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    padding-left: 14px;
+    border-left: 2px solid var(--color-border);
+  }
+
+  .dili-box {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+  }
+
+  .dili-browser {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 640px;
+  }
+
+  .dili-browser-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .dili-browser-path {
+    flex-grow: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: var(--color-text-muted);
+  }
+
+  .dili-browser-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+
+  .dili-browser-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 8px;
+    background: none;
+    color: var(--color-text-base);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .dili-browser-item:hover {
+    background: var(--color-bg-subtle);
+  }
+  /* ---------- editor (grouped, iOS settings style) ---------- */
+  .dili-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .dili-editor-bar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    background: var(--color-bg-base);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .dili-editor-bar h2 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .dili-editor-bar .dili-text-btn {
+    justify-self: start;
+  }
+
+  .dili-editor-bar .dili-pill {
+    justify-self: end;
+  }
+
+  .dili-editor-body {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: 32px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .dili-editor-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .dili-editor-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: sticky;
+    top: 80px;
+  }
+
+  .dili-cover-large {
+    width: 100%;
+  }
+
+  .dili-full {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .dili-center {
+    text-align: center;
+  }
+
+  .dili-editor-main {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .dili-text-btn {
+    min-height: 40px;
+    padding: 0 6px;
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .dili-group {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .dili-group .dili-divider {
+    margin: 0 0 0 18px;
+  }
+
+  .dili-group-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 52px;
+    padding: 8px 18px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .dili-labeled .dili-row-label {
+    flex: 0 0 90px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .dili-input {
+    flex-grow: 1;
+    min-width: 0;
+    height: 38px;
+    padding: 0 10px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    background: var(--color-bg-subtle);
+    color: var(--color-text-base);
+    font: inherit;
+    font-size: 15px;
+  }
+
+  .dili-input:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 0;
+  }
+
+  .dili-input-small {
+    flex-grow: 0;
+    width: 90px;
+  }
+
+  .dili-group-pad {
+    padding: 8px 18px 16px 18px;
+  }
+
+  .dili-group-title {
+    margin: 18px 0 0 18px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+
+  .dili-group-note {
+    margin: 0 18px;
+    font-size: 13px;
+    color: var(--color-text-muted);
+  }
+
+  .dili-pair,
+  .dili-pair-head {
+    display: grid;
+    grid-template-columns: 1fr 1fr 40px;
+  }
+
+  .dili-pair-head {
+    min-height: 36px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+  }
+
+  .dili-add-row {
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .dili-add-row:hover {
+    background: var(--color-bg-subtle);
+  }
+
+  .dili-danger-group {
+    margin-top: 18px;
+  }
+
+  .dili-danger-row {
+    justify-content: center;
+    border: none;
+    background: none;
+    color: var(--color-danger);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .dili-danger-row:hover {
+    background: var(--color-bg-subtle);
+  }
+
+  .dili-editor .dili-disclosure {
+    margin-top: 8px;
   }
 </style>

@@ -1,59 +1,52 @@
 import { apiFetch } from './fetch_utils'
 
+const DESCRIPTIONS = {
+  'desktop': 'Your normal desktop, on a screen that fits your device.',
+  'steam-big-picture': 'Opens Steam Big Picture when you connect, and closes it again when you stop.',
+  'lutris': 'Opens Lutris, and closes it again when you stop.',
+  'heroic': 'Opens the Heroic Games Launcher for your Epic, GOG and Amazon games.',
+  'retrodeck': 'Opens RetroDECK for your emulated games.',
+}
+
 /**
- * Ready-made apps that Dili can add for the user.
- * Commands that need to run on the PC itself (like Steam) get the right prefix,
- * so they work whether Dili runs as a Flatpak, in a distrobox or directly.
+ * Ready-made apps: the desktop plus the game launchers found on this PC.
+ * Dili works out the right commands (normal install or Flatpak) on the server side.
+ *
+ * @returns {Promise<object[]>} Presets with id, installed, description, icon and the app entry to save.
  */
-export function buildPresets(hostPrefix) {
-  const host = hostPrefix ? `${hostPrefix} ` : ''
-  return [
+export async function loadPresets() {
+  const presets = [
     {
       id: 'desktop',
-      description: 'Your normal desktop, on a screen that fits your device.',
-      app: {
-        name: 'Desktop',
-        'image-path': 'desktop.png',
-      },
-    },
-    {
-      id: 'bigpicture',
-      description: 'Opens Steam Big Picture when you connect and closes it again when you are done.',
-      app: {
-        name: 'Steam Big Picture',
-        'image-path': 'steam.png',
-        detached: [`setsid ${host}steam steam://open/bigpicture`],
-        'prep-cmd': [{ do: '', undo: `setsid ${host}steam steam://close/bigpicture` }],
-      },
+      installed: true,
+      description: DESCRIPTIONS.desktop,
+      icon: './assets/apps/desktop.png',
+      app: { name: 'Desktop', 'image-path': 'desktop.png' },
     },
   ]
-}
-
-async function hostPrefix() {
-  try {
-    const status = await fetch('./api/status').then((r) => r.json())
-    return status.host_prefix || ''
-  } catch (e) {
-    return ''
-  }
-}
-
-export async function loadPresets() {
-  const presets = buildPresets(await hostPrefix())
-  // Use the Steam that is really installed (normal or Flatpak Steam)
+  let launchers = []
   try {
     const r = await fetch('./api/launchers').then((x) => x.json())
-    const bp = (r.launchers || []).find((l) => l.id === 'steam-big-picture')
-    const preset = presets.find((p) => p.id === 'bigpicture')
-    if (bp && preset) {
-      preset.installed = !!bp.installed
-      if (bp.installed) {
-        preset.app.detached = [`setsid ${bp.detached}`]
-        preset.app['prep-cmd'] = [{ do: '', undo: `setsid ${bp.undo}` }]
+    launchers = r.launchers || []
+  } catch (e) {
+    launchers = []
+  }
+  for (const l of launchers) {
+    if (!DESCRIPTIONS[l.id]) continue  // only the launchers Dili offers
+    const app = { name: l.name, 'image-path': l.image || 'box.png' }
+    if (l.installed) {
+      app.detached = [`setsid ${l.detached}`]
+      if (l.undo) {
+        app['prep-cmd'] = [{ do: '', undo: l.undo }]
       }
     }
-  } catch (e) {
-    // Keep the default commands
+    presets.push({
+      id: l.id,
+      installed: !!l.installed,
+      description: DESCRIPTIONS[l.id],
+      icon: l.image ? `./assets/apps/${l.image}` : '',
+      app,
+    })
   }
   return presets
 }
@@ -69,7 +62,8 @@ export async function saveApp(app, index = -1) {
 }
 
 /**
- * Add every ready-made app that is not in the list yet.
+ * Add Desktop and Steam Big Picture (if Steam is installed) when they are missing.
+ * Used at the end of the setup wizard.
  */
 export async function addMissingPresets() {
   const [presets, list] = await Promise.all([
@@ -78,7 +72,8 @@ export async function addMissingPresets() {
   ])
   const names = new Set((list.apps || []).map((a) => a.name))
   for (const preset of presets) {
-    if (preset.installed !== false && !names.has(preset.app.name)) {
+    const wanted = preset.id === 'desktop' || preset.id === 'steam-big-picture'
+    if (wanted && preset.installed && !names.has(preset.app.name)) {
       await saveApp(preset.app)
     }
   }
