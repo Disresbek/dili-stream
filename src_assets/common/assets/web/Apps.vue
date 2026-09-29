@@ -28,7 +28,7 @@
             </div>
             <button type="button" class="dili-pill dili-pill-outline dili-full" @click="openCoverSearch">Find a picture</button>
             <button type="button" class="dili-text-btn dili-full" @click="openBrowser('file', pickLocalPicture)">Use a picture from this PC</button>
-            <p class="dili-help dili-center">Shown for this app in Moonlight.</p>
+            <p class="dili-help dili-center">{{ editing.autoPicked ? 'Found automatically. Change it any time.' : 'Shown for this app in Moonlight.' }}</p>
           </aside>
 
           <!-- Right: settings -->
@@ -69,17 +69,54 @@
             </div>
 
             <template v-if="!editing.lockName">
+              <button v-if="!picker" type="button" class="dili-choose" @click="openPicker">
+                <Search :size="20"></Search>
+                <span>
+                  <strong>Choose from this PC</strong>
+                  <span class="dili-help">Pick an installed game or app. Dili fills in everything for you.</span>
+                </span>
+              </button>
+
+              <div v-if="picker" class="dili-group">
+                <div class="dili-group-row">
+                  <input v-model="picker.query" type="text" class="dili-input" placeholder="Search your games and apps" autofocus>
+                  <button type="button" class="dili-icon-btn" aria-label="Close" @click="picker = null"><X :size="18"></X></button>
+                </div>
+                <div class="dili-picker-list">
+                  <div v-if="picker.loading" class="dili-group-pad dili-help">Looking for games and apps…</div>
+                  <template v-else>
+                    <div v-if="pickerGames.length" class="dili-picker-title">Steam games</div>
+                    <button v-for="g in pickerGames" :key="'g' + g.command" type="button" class="dili-browser-item" @click="pickInstalled(g)">
+                      <Gamepad2 :size="18"></Gamepad2><span>{{ g.name }}</span>
+                    </button>
+                    <div v-if="pickerApps.length" class="dili-picker-title">Games and apps</div>
+                    <button v-for="a in pickerApps" :key="'a' + a.name" type="button" class="dili-browser-item" @click="pickInstalled(a)">
+                      <Gamepad2 v-if="a.kind === 'game'" :size="18"></Gamepad2>
+                      <AppWindow v-else :size="18"></AppWindow>
+                      <span>{{ a.name }}</span>
+                    </button>
+                    <div v-if="!pickerGames.length && !pickerApps.length" class="dili-group-pad dili-help">Nothing found.</div>
+                  </template>
+                </div>
+              </div>
+
               <!-- Basics -->
               <div class="dili-group">
                 <label class="dili-group-row dili-labeled">
                   <span class="dili-row-label">Name</span>
-                  <input v-model="editing.name" type="text" class="dili-input" placeholder="As shown in Moonlight">
+                  <input v-model="editing.name" type="text" class="dili-input" placeholder="As shown in Moonlight" @blur="autoPicture">
                 </label>
                 <div class="dili-divider"></div>
                 <div class="dili-group-row dili-labeled">
                   <span class="dili-row-label">Program</span>
-                  <input v-model="editing.command" type="text" class="dili-input" placeholder="Leave empty for the desktop">
+                  <input v-model="editing.command" type="text" class="dili-input" placeholder="Leave empty for the desktop" @input="testResult = null">
                   <button type="button" class="dili-pill dili-pill-outline dili-pill-small" @click="openBrowser('file', (p) => (editing.command = quote(p)))">Browse…</button>
+                  <button type="button" class="dili-pill dili-pill-outline dili-pill-small" :disabled="!editing.command.trim() || testing" @click="tryCommand">
+                    {{ testing ? 'Starting…' : 'Try it' }}
+                  </button>
+                </div>
+                <div v-if="testResult" class="dili-group-pad dili-small-pad" :class="testResult.ok ? 'dili-ok-text' : 'dili-error'">
+                  {{ testResult.text }}
                 </div>
                 <div class="dili-divider"></div>
                 <div class="dili-group-row">
@@ -181,6 +218,8 @@
               </template>
 
               <div v-if="editing.index !== -1" class="dili-group dili-danger-group">
+                <button type="button" class="dili-group-row dili-add-row dili-center-row" @click="duplicateEditing">Duplicate app</button>
+                <div class="dili-divider"></div>
                 <button type="button" class="dili-group-row dili-danger-row" @click="removeEditing">
                   {{ confirmDelete ? 'Tap again to remove this app' : 'Remove app' }}
                 </button>
@@ -250,11 +289,14 @@
   import { apiFetch } from './fetch_utils'
   import { loadPresets, saveApp as savePresetApp } from './presets'
   import { searchCovers, useCover } from './covers'
-  import { ArrowUp, ChevronRight, File as FileIcon, Folder, Plus, X } from '@lucide/vue'
+  import { AppWindow, ArrowUp, ChevronRight, File as FileIcon, Folder, Gamepad2, Plus, Search, X } from '@lucide/vue'
 
   export default {
     components: {
       Navbar,
+      AppWindow,
+      Gamepad2,
+      Search,
       ArrowUp,
       ChevronRight,
       FileIcon,
@@ -272,12 +314,24 @@
         showMore: false,
         coverSearch: null,
         browser: null,
+        picker: null,
+        installed: null,
+        testing: false,
+        testResult: null,
         confirmDelete: false,
         busy: false,
         error: '',
       };
     },
     computed: {
+      pickerGames() {
+        return this.filterInstalled(this.installed ? this.installed.games : []);
+      },
+      pickerApps() {
+        const apps = this.filterInstalled(this.installed ? this.installed.apps : []);
+        // Games first, then everything else, alphabetically
+        return [...apps].sort((a, b) => (a.kind === 'game') === (b.kind === 'game') ? a.name.localeCompare(b.name) : (a.kind === 'game' ? -1 : 1));
+      },
       installedPresets() {
         return this.presets.filter((p) => p.installed || this.presetIndex(p) !== -1);
       },
@@ -353,6 +407,8 @@
         this.showMore = !lockName && (this.editing.prep.length > 0 || this.editing.background.length > 0 || !!this.editing.workingDir);
       },
       resetEditorState() {
+        this.picker = null;
+        this.testResult = null;
         this.error = '';
         this.confirmDelete = false;
         this.coverSearch = null;
@@ -379,7 +435,74 @@
           output: app.output || '',
           imagePath: '',
           pictureUrl: '',
+          autoPicked: false,
         };
+      },
+      filterInstalled(list) {
+        const q = this.picker ? this.picker.query.trim().toLowerCase() : '';
+        return q ? list.filter((x) => x.name.toLowerCase().includes(q)) : list;
+      },
+      async openPicker() {
+        this.picker = { query: '', loading: !this.installed };
+        if (!this.installed) {
+          try {
+            this.installed = await fetch('./api/installed').then((r) => r.json());
+          } catch (e) {
+            this.installed = { games: [], apps: [] };
+          }
+          if (this.picker) this.picker.loading = false;
+        }
+      },
+      pickInstalled(item) {
+        this.editing.name = item.name;
+        this.editing.command = item.command;
+        // Steam starts the game and quits right away, so Dili just starts it
+        this.editing.closeOnEnd = item.kind !== 'steam';
+        this.picker = null;
+        this.testResult = null;
+        this.autoPicture();
+      },
+      async autoPicture() {
+        const e = this.editing;
+        if (!e || e.imagePath || e.pictureUrl || !e.name.trim()) return;
+        if (e.index !== -1 && e.original['image-path'] && !['box.png', 'desktop.png'].includes(e.original['image-path'])) return;
+        try {
+          const results = await searchCovers(e.name.trim());
+          if (results.length && this.editing === e && !e.imagePath) {
+            e.imagePath = await useCover(results[0]);
+            e.pictureUrl = results[0].url;
+            e.autoPicked = true;
+          }
+        } catch (err) {
+          // No picture found, that's fine
+        }
+      },
+      async tryCommand() {
+        this.testing = true;
+        this.testResult = null;
+        try {
+          const r = await apiFetch('./api/apps/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: this.editing.command.trim() }),
+          });
+          const result = await r.json();
+          if (!result.found) {
+            this.testResult = { ok: false, text: "Dili can't find this program on your PC. Check the spelling, or use Choose from this PC." };
+          } else {
+            this.testResult = { ok: true, text: 'Found it and started it on your PC. Close it again when you are done checking.' };
+          }
+        } catch (err) {
+          this.testResult = { ok: false, text: 'The test did not work. Please try again.' };
+        } finally {
+          this.testing = false;
+        }
+      },
+      duplicateEditing() {
+        const copy = { ...this.buildApp(), name: `${this.editing.name.trim() || this.editing.original.name} (copy)` };
+        this.resetEditorState();
+        this.editing = this.makeEditing(-1, copy, false);
+        this.showMore = this.editing.prep.length > 0 || this.editing.background.length > 0 || !!this.editing.workingDir;
       },
       cancelEdit() {
         this.editing = null;
@@ -1277,5 +1400,62 @@
 
   .dili-editor .dili-disclosure {
     margin-top: 8px;
+  }
+  .dili-choose {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 16px 18px;
+    border: 1px solid var(--color-primary);
+    border-radius: 14px;
+    background: var(--color-surface);
+    color: var(--color-text-base);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .dili-choose svg {
+    color: var(--color-primary);
+    flex-shrink: 0;
+  }
+
+  .dili-choose > span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .dili-choose:hover {
+    background: var(--color-bg-subtle);
+  }
+
+  .dili-picker-list {
+    max-height: 380px;
+    overflow-y: auto;
+    padding: 0 8px 8px 8px;
+  }
+
+  .dili-picker-title {
+    margin: 12px 10px 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+
+  .dili-small-pad {
+    padding-top: 0;
+    font-size: 13px;
+  }
+
+  .dili-ok-text {
+    color: var(--color-success);
+  }
+
+  .dili-center-row {
+    justify-content: center;
   }
 </style>

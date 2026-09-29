@@ -14,6 +14,9 @@
 #include <optional>
 #include <fstream>
 #include <mutex>
+#include <sstream>
+#include <regex>
+#include <map>
 #include <set>
 #include <thread>
 #include <unistd.h>
@@ -1883,6 +1886,168 @@ echo done
     add("retrodeck", "RetroDECK", retrodeck.first, retrodeck.second, "");
 
     return list;
+  }
+
+  namespace {
+    std::string read_text_file(const std::filesystem::path &path) {
+      std::ifstream file(path);
+      return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    }
+
+    /**
+     * @brief Remove desktop-file placeholders like %U or @@u ... @@ from an Exec line.
+     */
+    std::string clean_exec(std::string exec) {
+      for (const std::string token : {"@@u", "@@"}) {
+        for (auto pos = exec.find(token); pos != std::string::npos; pos = exec.find(token)) {
+          exec.erase(pos, token.size());
+        }
+      }
+      static const std::regex field_codes(R"(\s%[fFuUdDnNickvm])");
+      exec = std::regex_replace(exec, field_codes, "");
+      while (!exec.empty() && exec.back() == ' ') {
+        exec.pop_back();
+      }
+      return exec;
+    }
+  }  // namespace
+
+  /**
+   * @brief Games and apps installed on this PC, for "Choose from this PC" on the Applications page.
+   *
+   * Steam games come from Steam's own library files (normal and Flatpak Steam),
+   * other apps from the desktop entries of the system, the user and Flatpak.
+   *
+   * @return JSON object with "games" and "apps" arrays of {name, command, kind}.
+   */
+  nlohmann::json installed_apps() {
+    nlohmann::json out;
+    out["games"] = nlohmann::json::array();
+    out["apps"] = nlohmann::json::array();
+    const char *home_env = std::getenv("HOME");
+    const std::filesystem::path home = home_env ? home_env : "/tmp";
+    std::error_code ec;
+
+    // ---- Steam games ----
+    std::set<std::string> seen;
+    const std::vector<std::pair<std::filesystem::path, bool>> steam_roots = {
+      {home / ".local/share/Steam", false},
+      {home / ".steam/steam", false},
+      {home / ".var/app/com.valvesoftware.Steam/.local/share/Steam", true},
+      {home / ".var/app/com.valvesoftware.Steam/data/Steam", true},
+    };
+    static const std::regex path_re(R"re("path"\s+"([^"]+)")re");
+    static const std::regex appid_re(R"re("appid"\s+"(\d+)")re");
+    static const std::regex name_re(R"re("name"\s+"([^"]+)")re");
+    for (const auto &[root, is_flatpak] : steam_roots) {
+      const auto vdf = read_text_file(root / "steamapps/libraryfolders.vdf");
+      std::vector<std::filesystem::path> libraries {root};
+      for (std::sregex_iterator it(vdf.begin(), vdf.end(), path_re), end; it != end; ++it) {
+        libraries.emplace_back((*it)[1].str());
+      }
+      for (const auto &library : libraries) {
+        const auto apps_dir = library / "steamapps";
+        if (!std::filesystem::is_directory(apps_dir, ec)) {
+          continue;
+        }
+        for (const auto &entry : std::filesystem::directory_iterator(apps_dir, ec)) {
+          const auto file = entry.path().filename().string();
+          if (!file.starts_with("appmanifest_") || !file.ends_with(".acf")) {
+            continue;
+          }
+          const auto acf = read_text_file(entry.path());
+          std::smatch id_match;
+          std::smatch name_match;
+          if (!std::regex_search(acf, id_match, appid_re) || !std::regex_search(acf, name_match, name_re)) {
+            continue;
+          }
+          const auto id = id_match[1].str();
+          const auto name = name_match[1].str();
+          // Skip Steam's own tools
+          if (seen.contains(id) || name.starts_with("Proton") || name.starts_with("Steam Linux Runtime") ||
+              name.starts_with("Steamworks") || name.find("Redistributable") != std::string::npos) {
+            continue;
+          }
+          seen.insert(id);
+          nlohmann::json game;
+          game["name"] = name;
+          game["kind"] = "steam";
+          game["command"] = (is_flatpak ? "flatpak run com.valvesoftware.Steam" : "steam") + std::string(" steam://rungameid/") + id;
+          out["games"].push_back(game);
+        }
+      }
+    }
+
+    // ---- Other apps (desktop entries on the PC itself) ----
+    const std::string script =
+      "sh -c 'for f in /usr/share/applications/*.desktop \"$HOME\"/.local/share/applications/*.desktop "
+      "/var/lib/flatpak/exports/share/applications/*.desktop \"$HOME\"/.local/share/flatpak/exports/share/applications/*.desktop; "
+      "do [ -f \"$f\" ] && { echo \"@@FILE $f\"; sed -n \"/^\\[Desktop Entry\\]/,/^\\[/p\" \"$f\" | grep -E \"^(Name|Exec|NoDisplay|Hidden|Type|Categories)=\"; }; done'";
+    const auto listing = portal::virtual_display::run_host(script);
+    std::set<std::string> app_names;
+    auto flush = [&](std::map<std::string, std::string> &fields) {
+      if (!fields.empty() && fields["Type"] == "Application" && fields["NoDisplay"] != "true" && fields["Hidden"] != "true" &&
+          !fields["Name"].empty() && !fields["Exec"].empty() && !app_names.contains(fields["Name"])) {
+        app_names.insert(fields["Name"]);
+        nlohmann::json app;
+        app["name"] = fields["Name"];
+        app["command"] = clean_exec(fields["Exec"]);
+        app["kind"] = fields["Categories"].find("Game") != std::string::npos ? "game" : "app";
+        out["apps"].push_back(app);
+      }
+      fields.clear();
+    };
+    std::map<std::string, std::string> fields;
+    std::istringstream lines(listing);
+    for (std::string line; std::getline(lines, line);) {
+      if (line.starts_with("@@FILE ")) {
+        flush(fields);
+        continue;
+      }
+      const auto eq = line.find('=');
+      if (eq == std::string::npos) {
+        continue;
+      }
+      const auto key = line.substr(0, eq);
+      if (!fields.contains(key)) {  // keep the first value (the untranslated one)
+        fields[key] = line.substr(eq + 1);
+      }
+    }
+    flush(fields);
+    return out;
+  }
+
+  /**
+   * @brief Check that a program exists on this PC, and start it once as a test.
+   *
+   * @param command The program with its arguments.
+   * @return JSON object: found, started.
+   */
+  nlohmann::json test_app_command(const std::string &command) {
+    nlohmann::json out;
+    out["found"] = false;
+    out["started"] = false;
+
+    // First word of the command, without quotes
+    std::string program;
+    if (!command.empty() && command.front() == '"') {
+      program = command.substr(1, command.find('"', 1) - 1);
+    } else {
+      program = command.substr(0, command.find(' '));
+    }
+    if (program.empty() || program.find('\'') != std::string::npos) {
+      return out;
+    }
+    const auto found = portal::virtual_display::run_host("sh -c 'command -v \"" + program + "\"'");
+    if (found.empty()) {
+      return out;
+    }
+    out["found"] = true;
+
+    // Start it detached on the PC, so this request does not wait for the program
+    portal::virtual_display::run_host("setsid -f " + command + " >/dev/null 2>&1 </dev/null");
+    out["started"] = true;
+    return out;
   }
 
   /**

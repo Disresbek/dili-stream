@@ -74,6 +74,8 @@ namespace platf {
   bool setup_mark_complete();
   nlohmann::json detect_launchers();
   std::string host_command_prefix();
+  nlohmann::json installed_apps();
+  nlohmann::json test_app_command(const std::string &command);
 }  // namespace platf
 #endif
 
@@ -1490,6 +1492,74 @@ namespace confighttp {
   }
 
   /**
+   * @brief Get the games and apps installed on this PC, for "Choose from this PC".
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/installed|:| GET|:| null}
+   */
+  void getInstalled(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+#ifdef SUNSHINE_BUILD_PORTAL
+    nlohmann::json output_tree = platf::installed_apps();
+#else
+    nlohmann::json output_tree {{"games", nlohmann::json::array()}, {"apps", nlohmann::json::array()}};
+#endif
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Check that an app command works by starting it once on this PC.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   * The body for the POST request should be JSON serialized in the following format:
+   * @code{.json}
+   * {
+   *   "command": "lutris"
+   * }
+   * @endcode
+   *
+   * @api_examples{/api/apps/test|:| POST|:| {"command":"lutris"}}
+   */
+  void testAppCommand(const resp_https_t &response, const req_https_t &request) {
+    if (!check_content_type(response, request, "application/json")) {
+      return;
+    }
+    if (!authenticate(response, request)) {
+      return;
+    }
+    std::string client_id = get_client_id(request);
+    if (!validate_csrf_token(response, request, client_id)) {
+      return;
+    }
+
+    print_req(request);
+
+    std::stringstream ss;
+    ss << request->content.rdbuf();
+    try {
+      const nlohmann::json input_tree = nlohmann::json::parse(ss);
+      const std::string command = input_tree.value("command", "");
+#ifdef SUNSHINE_BUILD_PORTAL
+      nlohmann::json output_tree = platf::test_app_command(command);
+#else
+      nlohmann::json output_tree {{"found", false}, {"started", false}};
+#endif
+      output_tree["status"] = true;
+      send_response(response, output_tree);
+    } catch (std::exception &e) {
+      BOOST_LOG(warning) << "TestAppCommand: "sv << e.what();
+      bad_request(response, request, e.what());
+    }
+  }
+
+  /**
    * @brief Get the streaming status for the Home page.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2656,6 +2726,8 @@ namespace confighttp {
     server.resource["^/api/apps$"]["POST"] = saveApp;
     server.resource["^/api/apps/([0-9]+)$"]["DELETE"] = deleteApp;
     server.resource["^/api/apps/close$"]["POST"] = closeApp;
+    server.resource["^/api/apps/test$"]["POST"] = testAppCommand;
+    server.resource["^/api/installed$"]["GET"] = getInstalled;
     server.resource["^/api/clients/list$"]["GET"] = getClients;
     server.resource["^/api/clients/unpair$"]["POST"] = unpair;
     server.resource["^/api/clients/unpair-all$"]["POST"] = unpairAll;
