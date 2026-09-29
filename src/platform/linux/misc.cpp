@@ -476,15 +476,18 @@ namespace platf {
       return cmd;
     }
 
+    // Strip every "run on the host" helper and setsid, in any order and combination.
+    // Commands saved while Dili ran in a distrobox (or by an older Sunshine Flatpak)
+    // keep working after switching to the Flatpak, and the other way round.
     bool setsid = false;
-    if (rest.starts_with("setsid ")) {
-      setsid = true;
-      rest = trim_left(rest.substr(7));
-    }
-    for (const std::string known : {"flatpak-spawn --host ", "distrobox-host-exec "}) {
-      if (rest.starts_with(known)) {
-        rest = trim_left(rest.substr(known.size()));
-        break;
+    for (bool stripped = true; stripped;) {
+      stripped = false;
+      for (const std::string known : {"setsid ", "flatpak-spawn --host ", "distrobox-host-exec "}) {
+        if (rest.starts_with(known)) {
+          setsid = setsid || known == "setsid ";
+          rest = trim_left(rest.substr(known.size()));
+          stripped = true;
+        }
       }
     }
 
