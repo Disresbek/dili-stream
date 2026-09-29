@@ -2902,3 +2902,68 @@ p {
         bottom: var(--spacing-sm);
     }
 }
+
+/* ---------- Dili: make every field you can type into easy to spot ---------- */
+:root {
+    --dili-field-border: color-mix(in srgb, var(--color-text-muted) 55%, transparent);
+}
+
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="search"],
+input[type="email"],
+input[type="url"],
+input:not([type]),
+textarea,
+select,
+.form-control,
+.form-select {
+    border: 1.5px solid var(--dili-field-border) !important;
+    cursor: text;
+}
+
+select,
+.form-select {
+    cursor: pointer;
+}
+
+input[type="text"]:hover,
+input[type="number"]:hover,
+input[type="password"]:hover,
+input[type="search"]:hover,
+input[type="email"]:hover,
+input[type="url"]:hover,
+input:not([type]):hover,
+textarea:hover,
+select:hover,
+.form-control:hover,
+.form-select:hover {
+    border-color: color-mix(in srgb, var(--color-primary) 60%, var(--dili-field-border)) !important;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+input[type="email"]:focus,
+input[type="url"]:focus,
+input:not([type]):focus,
+textarea:focus,
+select:focus,
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--color-primary) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 28%, transparent) !important;
+    outline: none !important;
+}
+
+::placeholder {
+    color: var(--color-text-muted) !important;
+    opacity: 0.75 !important;
+}
+
+/* The search box in Advanced sits next to an icon: keep them as one field */
+.input-group > .input-group-text {
+    border: 1.5px solid var(--dili-field-border) !important;
+}

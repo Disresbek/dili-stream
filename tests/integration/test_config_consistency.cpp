@@ -416,7 +416,8 @@ TEST_F(ConfigConsistencyTest, ConfigSidebarTabsDoNotNavigateAway) {
   const std::sregex_iterator tabButtonBegin(content.begin(), content.end(), tabButtonPattern);
   const std::sregex_iterator tabButtonEnd;
 
-  EXPECT_EQ(std::distance(tabButtonBegin, tabButtonEnd), 2);
+  // Dili renders all sidebar sections (main, encoder, expert) with one shared button template
+  EXPECT_EQ(std::distance(tabButtonBegin, tabButtonEnd), 1);
   EXPECT_EQ(content.find("href=\"#\""), std::string::npos);
 }
 

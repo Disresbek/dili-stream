@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue';
 const model = defineModel({
   type: [Boolean, Number, String],
   required: true,
@@ -105,25 +106,118 @@ const descField = props.desc ?? `${props.localePrefix}.${props.id}_desc`;
 const showDesc = props.desc !== "" || Object.entries(slots).length > 0;
 const showDefValue = parsedDefaultPropValue !== null;
 const defValue = parsedDefaultPropValue ? "_common.enabled_def_cbox" : "_common.disabled_def_cbox";
+
+// Dili: show a small "Changed" label and a Reset button when the value differs from the default
+const isOn = computed(() => model.value === checkboxValues.truthy);
+const changed = computed(() => showDefValue && isOn.value !== parsedDefaultPropValue);
+const toggle = () => {
+  model.value = isOn.value ? checkboxValues.falsy : checkboxValues.truthy;
+};
+const reset = () => {
+  model.value = parsedDefaultPropValue ? checkboxValues.truthy : checkboxValues.falsy;
+};
 </script>
 
 <template>
-  <div :class="extendedClassStr">
-    <label :for="props.id" :class="`form-check-label${showDesc ? ' mb-2' : ''}`">
-      {{ $t(labelField) }}
-      <div class="mt-0 form-text" v-if="showDefValue">
-        {{ $t(defValue) }}
+  <div :class="extendedClassStr + ' dili-check-row'">
+    <div class="dili-check-text">
+      <label :for="props.id" class="dili-check-label">
+        {{ $t(labelField) }}
+        <span v-if="changed" class="dili-changed">Changed</span>
+      </label>
+      <div class="form-text" v-if="showDesc">
+        {{ $t(descField) }}
+        <slot></slot>
       </div>
-    </label>
-    <input type="checkbox"
-           class="form-check-input"
-           :id="props.id"
-           v-model="model"
-           :true-value="checkboxValues.truthy"
-           :false-value="checkboxValues.falsy" />
-    <div class="form-text" v-if="showDesc">
-      {{ $t(descField) }}
-      <slot></slot>
+      <button v-if="changed" type="button" class="dili-reset" @click="reset">Reset to {{ parsedDefaultPropValue ? 'on' : 'off' }}</button>
     </div>
+    <button
+      type="button"
+      role="switch"
+      class="dili-toggle"
+      :class="{ on: isOn }"
+      :id="props.id"
+      :aria-checked="isOn ? 'true' : 'false'"
+      @click="toggle"
+    >
+      <span></span>
+    </button>
   </div>
 </template>
+
+<style scoped>
+  .dili-check-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding-left: 0;
+  }
+
+  .dili-check-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .dili-check-label {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .dili-changed {
+    margin-left: 8px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-on-primary);
+    background: var(--color-primary);
+    vertical-align: middle;
+  }
+
+  .dili-reset {
+    align-self: flex-start;
+    padding: 0;
+    margin-top: 2px;
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .dili-toggle {
+    flex-shrink: 0;
+    width: 50px;
+    height: 30px;
+    border: none;
+    border-radius: 15px;
+    background: var(--color-border-strong);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .dili-toggle span {
+    display: block;
+    width: 26px;
+    height: 26px;
+    margin-left: 2px;
+    border-radius: 13px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transition: margin-left 0.15s ease;
+  }
+
+  .dili-toggle.on {
+    background: var(--color-success);
+  }
+
+  .dili-toggle.on span {
+    margin-left: 22px;
+  }
+</style>

@@ -1,9 +1,10 @@
 <template>
   <Navbar></Navbar>
   <div id="content" class="container">
-    <div class="my-4">
-      <h1>{{ $t('config.configuration') }}</h1>
-      <p>{{ $t('config.configuration_desc') }}</p>
+    <div class="dili-adv-head">
+      <h1>Advanced</h1>
+      <p>Everything Dili can do, for when you want to fine-tune. The important settings are on
+        <RouterLink to="/displays">Display &amp; Quality</RouterLink>.</p>
     </div>
 
     <!-- Search Bar with Autocomplete -->
@@ -40,26 +41,22 @@
       <div class="config-layout">
         <!-- Sidebar navigation -->
         <nav class="config-nav">
-          <ul class="nav config-nav-list">
-            <li class="nav-item" v-for="tab in generalTabs" :key="tab.id">
-              <button type="button" class="nav-link" :class="{'active': tab.id === currentTab}"
-                @click="currentTab = tab.id">
-                <component :is="getTabIcon(tab.id)" :size="18" class="icon"></component>
-                {{ $t(tab.nameKey) }}
-              </button>
-            </li>
-          </ul>
-          <template v-if="encoderTabs.length">
-            <div class="config-nav-heading">{{ $t('config.encoders') }}</div>
+          <template v-for="section in navSections" :key="section.id">
+            <div v-if="section.title" class="config-nav-heading">{{ section.title }}</div>
             <ul class="nav config-nav-list">
-              <li class="nav-item" v-for="tab in encoderTabs" :key="tab.id">
+              <li class="nav-item" v-for="tab in section.tabs" :key="tab.id">
                 <button type="button" class="nav-link" :class="{'active': tab.id === currentTab}"
                   @click="currentTab = tab.id">
                   <component :is="getTabIcon(tab.id)" :size="18" class="icon"></component>
-                  {{ $t(tab.nameKey) }}
+                  {{ tabName(tab) }}
+                  <span v-if="tab.id === activeEncoderTab" class="dili-in-use">In use</span>
                 </button>
               </li>
             </ul>
+            <button v-if="section.id === 'encoder' && activeEncoderTab && encoderTabs.length > 1" type="button"
+              class="dili-nav-more" @click="showAllEncoders = !showAllEncoders">
+              {{ showAllEncoders ? 'Show only the encoder in use' : 'Show all encoders' }}
+            </button>
           </template>
 
           <div class="config-actions">
@@ -126,6 +123,11 @@
         :platform="platform">
       </advanced>
 
+      <div v-if="isEncoderTab" class="dili-encoder-note">
+        <strong>{{ currentTab === activeEncoderTab ? 'Dili uses this encoder right now.' : 'Dili does not use this encoder on this PC.' }}</strong>
+        <span>Dili tests your graphics card every time it starts and picks the fastest encoder automatically
+          (right now: {{ activeEncoderLabel }}). These settings only fine-tune it. Most people never need to change them.</span>
+      </div>
       <container-encoders
         :current-tab="currentTab"
         :config="config"
@@ -165,6 +167,34 @@
   } from '@lucide/vue'
 
   const ENCODER_TAB_IDS = new Set(["nv", "amd", "qsv", "vaapi", "vt", "vulkan", "sw"]);
+  // Dili: rarely needed sections, grouped under "Expert"
+  const EXPERT_TAB_IDS = new Set(["advanced", "files"]);
+  // Friendlier section names
+  const TAB_NAMES = {
+    general: "General",
+    input: "Controls",
+    av: "Sound & Picture",
+    network: "Network",
+    advanced: "Streaming engine",
+    files: "Files & paths",
+    nv: "NVIDIA",
+    amd: "AMD (Windows)",
+    qsv: "Intel Quick Sync",
+    vaapi: "AMD & Intel (VA-API)",
+    vt: "Apple VideoToolbox",
+    vulkan: "Vulkan",
+    sw: "Software",
+  };
+  const ENCODER_TO_TAB = { nvenc: "nv", amdvce: "amd", quicksync: "qsv", vaapi: "vaapi", videotoolbox: "vt", vulkan: "vulkan", software: "sw" };
+  const ENCODER_LABELS = {
+    nvenc: "your NVIDIA graphics card",
+    amdvce: "your AMD graphics card",
+    quicksync: "your Intel graphics",
+    vaapi: "your AMD or Intel graphics card (VA-API)",
+    videotoolbox: "your Mac's video encoder",
+    vulkan: "your graphics card through Vulkan",
+    software: "your processor (software encoding)",
+  };
 
   /**
    * Compare configuration values without coercing their types.
@@ -223,6 +253,8 @@
         config: null,
         currentTab: "general",
         searchQuery: "",
+        showAllEncoders: false,
+        activeEncoder: "",
         hashChangeHandler: null,
         // Keep a private copy because platform filtering replaces this array at runtime.
         tabs: structuredClone(configTabs),
@@ -237,6 +269,32 @@
     computed: {
       generalTabs() {
         return this.tabs.filter(tab => !ENCODER_TAB_IDS.has(tab.id));
+      },
+      mainTabs() {
+        return this.generalTabs.filter(tab => !EXPERT_TAB_IDS.has(tab.id));
+      },
+      expertTabs() {
+        return this.generalTabs.filter(tab => EXPERT_TAB_IDS.has(tab.id));
+      },
+      activeEncoderTab() {
+        return ENCODER_TO_TAB[this.activeEncoder] || '';
+      },
+      activeEncoderLabel() {
+        return ENCODER_LABELS[this.activeEncoder] || 'not decided yet';
+      },
+      visibleEncoderTabs() {
+        if (this.showAllEncoders || !this.activeEncoderTab) return this.encoderTabs;
+        return this.encoderTabs.filter(tab => tab.id === this.activeEncoderTab || tab.id === this.currentTab);
+      },
+      navSections() {
+        return [
+          { id: 'main', title: '', tabs: this.mainTabs },
+          { id: 'encoder', title: 'Encoder', tabs: this.visibleEncoderTabs },
+          { id: 'expert', title: 'Expert', tabs: this.expertTabs },
+        ].filter((section) => section.tabs.length);
+      },
+      isEncoderTab() {
+        return ENCODER_TAB_IDS.has(this.currentTab);
       },
       encoderTabs() {
         return this.tabs.filter(tab => ENCODER_TAB_IDS.has(tab.id));
@@ -265,6 +323,7 @@
       }
     },
     created() {
+      fetch("./api/status").then((r) => r.json()).then((st) => { this.activeEncoder = st.encoder || ""; }).catch(() => {});
       fetch("./api/config")
         .then((r) => r.json())
         .then((r) => {
@@ -312,6 +371,9 @@
         });
     },
     methods: {
+      tabName(tab) {
+        return TAB_NAMES[tab.id] || this.$t(tab.nameKey);
+      },
       getTabIcon(tabId) {
         const iconMap = {
           'general': 'Settings',
@@ -492,3 +554,132 @@
     },
   }
 </script>
+
+<style>
+  /* ---------- Dili: Apple-style grouped settings ---------- */
+  .dili-adv-head {
+    margin: 36px 0 20px 0;
+  }
+
+  .dili-adv-head h1 {
+    margin: 0 0 6px 0;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .dili-adv-head p {
+    margin: 0;
+    color: var(--color-text-muted);
+  }
+
+  .dili-adv-head a {
+    color: var(--color-primary);
+    font-weight: 600;
+  }
+
+  .config-content {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+
+  /* Every option becomes a row inside one rounded group */
+  .config-content > div:not(.alert):not(.dili-encoder-note):not(:empty) {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    padding: 4px 20px;
+  }
+
+  .config-content .mb-3,
+  .config-content .form-check.dili-check-row {
+    margin: 0 !important;
+    padding: 16px 0 !important;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .config-content .mb-3:last-child,
+  .config-content .form-check.dili-check-row:last-child {
+    border-bottom: none;
+  }
+
+  .config-content .mb-3 > .form-check.dili-check-row {
+    padding: 0 !important;
+    border-bottom: none;
+  }
+
+  .config-content .form-label,
+  .config-content label {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .config-content .form-text {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    line-height: 1.45;
+  }
+
+  .config-content .form-control,
+  .config-content .form-select {
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background-color: var(--color-bg-subtle);
+    min-height: 40px;
+  }
+
+  .config-content .form-control:focus,
+  .config-content .form-select:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  }
+
+  .config-nav .nav-link {
+    border-radius: 10px;
+  }
+
+  .dili-in-use {
+    margin-left: auto;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #ffffff;
+    background: var(--color-success);
+  }
+
+  .config-nav .nav-link:has(.dili-in-use) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dili-nav-more {
+    margin: 4px 0 0 12px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .dili-encoder-note {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 16px;
+    padding: 14px 18px;
+    border-radius: 14px;
+    background: var(--color-bg-subtle);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .dili-encoder-note span {
+    color: var(--color-text-muted);
+  }
+</style>

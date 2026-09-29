@@ -80,6 +80,10 @@ namespace platf {
 }  // namespace platf
 #endif
 
+namespace video {
+  std::string active_encoder_name();
+}  // namespace video
+
 namespace confighttp {
   namespace fs = std::filesystem;
 
@@ -1600,6 +1604,7 @@ namespace confighttp {
     nlohmann::json output_tree;
     output_tree["host_name"] = config::nvhttp.sunshine_name;
     output_tree["sessions"] = rtsp_stream::session_count();
+    output_tree["encoder"] = video::active_encoder_name();
     output_tree["virtual_enabled"] = config::video.output_name == "virtual";
 
     std::string app_name;

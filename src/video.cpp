@@ -1468,6 +1468,15 @@ namespace video {
   };
 
   static encoder_t *chosen_encoder;
+
+  /**
+   * @brief Name of the encoder Dili picked automatically at startup, for the web UI.
+   *
+   * @return For example "vaapi", "nvenc", "vulkan" or "software", or "" before the first probe.
+   */
+  std::string active_encoder_name() {
+    return chosen_encoder ? std::string(chosen_encoder->name) : std::string();
+  }
   int active_hevc_mode;  ///< HEVC mode selected by the most recent encoder probe.
   int active_av1_mode;  ///< AV1 mode selected by the most recent encoder probe.
   bool last_encoder_probe_supported_ref_frames_invalidation = false;  ///< Whether the last probe found reference-frame invalidation support.
