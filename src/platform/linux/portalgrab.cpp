@@ -2185,6 +2185,13 @@ echo done
   }
 
   /**
+   * @brief Start a command on the PC in the background (used by controller shortcuts).
+   */
+  void dili_run_detached(const std::string &command) {
+    portal::virtual_display::run_host("setsid -f " + command + " >/dev/null 2>&1 </dev/null");
+  }
+
+  /**
    * @brief Prefix that runs a command on the host, e.g. "flatpak-spawn --host" inside a Flatpak.
    */
   std::string host_command_prefix() {

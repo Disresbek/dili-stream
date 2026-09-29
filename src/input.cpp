@@ -13,6 +13,7 @@ extern "C" {
 #include <bitset>
 #include <chrono>
 #include <cmath>
+#include <format>
 #include <cstring>
 #include <functional>
 #include <list>
@@ -43,6 +44,12 @@ constexpr int WHEEL_DELTA = 120;  ///< Standard Windows wheel delta used to norm
 #endif
 
 using namespace std::literals;
+
+#ifdef SUNSHINE_BUILD_PORTAL
+namespace platf {
+  void dili_run_detached(const std::string &command);
+}  // namespace platf
+#endif
 
 namespace input {
 
@@ -246,6 +253,8 @@ namespace input {
     thread_pool_util::ThreadPool::task_id_t start_timeout_id;  ///< Pending mouse mode toggle.
     thread_pool_util::ThreadPool::task_id_t mouse_task_id;  ///< Repeating pointer movement task.
     bool mouse_mode = false;  ///< Whether this controller currently acts as a mouse.
+    bool select_used = false;  ///< Select was used for a shortcut while held, so it is not sent to the game.
+    bool guide_fired = false;  ///< Holding Select already pressed the Guide button.
     double scroll_remainder = 0;  ///< Fractional scroll carried over between ticks.
 
     int id;  ///< Global gamepad slot assigned to this client controller.
@@ -1580,6 +1589,162 @@ namespace input {
     platf::gamepad_battery(platf_input, battery);
   }
 
+  // ---------------------------------------------------------------------------------------
+  // Dili controller extras: shortcuts with Select, feedback, layout and dead zone
+  // ---------------------------------------------------------------------------------------
+
+  /**
+   * @brief Run a command on the PC without blocking controller input.
+   */
+  static void dili_run(std::string command) {
+#ifdef SUNSHINE_BUILD_PORTAL
+    std::thread([command = std::move(command)]() {
+      platf::dili_run_detached(command);
+    }).detach();
+#endif
+  }
+
+  /**
+   * @brief Show a short notification on the PC (and so on the streamed screen).
+   *
+   * @param text Plain text without quotes.
+   */
+  static void dili_notify(const std::string &text) {
+    if (!config::input.controller_feedback) {
+      return;
+    }
+    dili_run("notify-send -a Dili -i io.github.disresbek.Dili -t 1500 '" + text + "'");
+  }
+
+  /**
+   * @brief Let the controller in the player's hands rumble briefly.
+   *
+   * @param pulses 1 = one short buzz, 2 = two short buzzes.
+   */
+  static void dili_rumble(std::shared_ptr<input_t> input, int controller, int pulses) {
+    if (!config::input.controller_feedback || !input->feedback_queue) {
+      return;
+    }
+    const auto id = static_cast<std::uint16_t>(controller);  // client-relative controller number
+    for (int i = 0; i < pulses; ++i) {
+      const auto start = std::chrono::milliseconds {i * 220};
+      task_pool.pushDelayed([input, id]() {
+        input->feedback_queue->raise(platf::gamepad_feedback_msg_t::make_rumble(id, 0x7000, 0x7000));
+      }, start);
+      task_pool.pushDelayed([input, id]() {
+        input->feedback_queue->raise(platf::gamepad_feedback_msg_t::make_rumble(id, 0, 0));
+      }, start + 120ms);
+    }
+  }
+
+  /**
+   * @brief Press and release a key combination on the PC's virtual keyboard.
+   *
+   * @param keys Windows virtual-key codes, pressed in order and released in reverse.
+   */
+  static void dili_key_combo(std::initializer_list<std::uint16_t> keys) {
+    for (auto key : keys) {
+      platf::keyboard_update(platf_input, key, false, 0);
+    }
+    for (auto it = std::rbegin(keys); it != std::rend(keys); ++it) {
+      platf::keyboard_update(platf_input, *it, true, 0);
+    }
+  }
+
+  // Volume commands (the stream's sound is the default output while streaming)
+  constexpr auto DILI_VOLUME = "sh -c 'pactl set-sink-mute @DEFAULT_SINK@ 0; pactl set-sink-volume @DEFAULT_SINK@ {}; "
+                               "v=$(pactl get-sink-volume @DEFAULT_SINK@ | grep -o \"[0-9]*%\" | head -n 1); "
+                               "notify-send -a Dili -t 1200 \"Volume $v\"'";
+
+  /**
+   * @brief Buttons that trigger a shortcut while Select is held.
+   */
+  constexpr std::uint32_t DILI_SHORTCUT_BUTTONS = platf::B | platf::X | platf::Y | platf::RIGHT_BUTTON |
+                                                  platf::DPAD_UP | platf::DPAD_DOWN | platf::DPAD_LEFT;
+
+  /**
+   * @brief Handle "hold Select + button" shortcuts.
+   */
+  static void dili_select_shortcuts(std::shared_ptr<input_t> &input, int controller, std::uint32_t pressed) {
+    auto &gamepad = input->gamepads[controller];
+    auto use = [&gamepad]() {
+      gamepad.select_used = true;
+      if (gamepad.back_timeout_id) {
+        // A shortcut was used, so holding Select should not also press Guide
+        task_pool.cancel(gamepad.back_timeout_id);
+        gamepad.back_timeout_id = nullptr;
+      }
+    };
+
+    if (pressed & platf::B) {
+      use();
+      dili_key_combo({0x12, 0x73});  // Alt + F4
+      dili_notify("Closing the game");
+    }
+    if (pressed & platf::DPAD_UP) {
+      use();
+      dili_run(std::vformat(DILI_VOLUME, std::make_format_args("+5%")));
+    }
+    if (pressed & platf::DPAD_DOWN) {
+      use();
+      dili_run(std::vformat(DILI_VOLUME, std::make_format_args("-5%")));
+    }
+    if (pressed & platf::DPAD_LEFT) {
+      use();
+      dili_run("sh -c 'pactl set-sink-mute @DEFAULT_SINK@ toggle; "
+               "m=$(pactl get-sink-mute @DEFAULT_SINK@ | grep -q yes && echo Muted || echo \"Sound on\"); "
+               "notify-send -a Dili -t 1200 \"$m\"'");
+    }
+    if (pressed & platf::Y) {
+      use();
+      dili_run("steam steam://open/keyboard");
+    }
+    if (pressed & platf::RIGHT_BUTTON) {
+      use();
+      dili_run("spectacle -b -n -f");
+      dili_notify("Screenshot saved to your Pictures folder");
+      dili_rumble(input, controller, 1);
+    }
+    if (pressed & platf::X) {
+      use();
+      dili_run("steam steam://open/bigpicture");
+      dili_notify("Opening Steam Big Picture");
+    }
+  }
+
+  /**
+   * @brief Apply the Nintendo layout and the stick dead zone to what the game receives.
+   */
+  static void dili_adjust_state(platf::gamepad_state_t &state) {
+    if (config::input.nintendo_layout) {
+      auto swap = [&state](std::uint32_t a, std::uint32_t b) {
+        const bool has_a = state.buttonFlags & a;
+        const bool has_b = state.buttonFlags & b;
+        state.buttonFlags &= ~(a | b);
+        state.buttonFlags |= (has_a ? b : 0) | (has_b ? a : 0);
+      };
+      swap(platf::A, platf::B);
+      swap(platf::X, platf::Y);
+    }
+    if (const int dz_percent = config::input.stick_deadzone; dz_percent > 0) {
+      const double dz = 32767.0 * dz_percent / 100.0;
+      auto apply = [dz](std::int16_t &v) {
+        const double magnitude = std::abs(static_cast<double>(v));
+        if (magnitude <= dz) {
+          v = 0;
+          return;
+        }
+        // Rescale so the stick still reaches its full range
+        const double scaled = (magnitude - dz) / (32767.0 - dz) * 32767.0;
+        v = static_cast<std::int16_t>((v < 0 ? -1 : 1) * std::min(scaled, 32767.0));
+      };
+      apply(state.lsX);
+      apply(state.lsY);
+      apply(state.rsX);
+      apply(state.rsY);
+    }
+  }
+
   /**
    * @brief Convert a stick axis to a -1..1 speed with a dead zone and a smooth curve.
    */
@@ -1607,7 +1772,11 @@ namespace input {
       return;
     }
 
-    constexpr double pointer_speed = 18.0;  // pixels per tick at full deflection
+    // Pointer speed from the settings (1..10); holding LT slows it down for precise aiming
+    double pointer_speed = 6.0 + (config::input.mouse_mode_speed - 1) * 2.7;  // pixels per tick at full deflection
+    if (gamepad.gamepad_state.lt > 100) {
+      pointer_speed *= 0.3;
+    }
     constexpr double scroll_speed = 12.0;  // scroll units per tick at full deflection (120 = one notch)
 
     const auto &state = gamepad.gamepad_state;
@@ -1644,6 +1813,8 @@ namespace input {
       platf::gamepad_update(platf_input, gamepad.id, platf::gamepad_state_t {});
       gamepad.mouse_task_id = task_pool.pushDelayed(mouse_mode_tick, 10ms, input, controller).task_id;
       BOOST_LOG(info) << "[mouse_mode] Controller "sv << controller << " now works as a mouse"sv;
+      dili_rumble(input, controller, 2);
+      dili_notify("Mouse mode on. Right stick moves the pointer, LB clicks, hold LT for precision");
     } else {
       if (gamepad.mouse_task_id) {
         task_pool.cancel(gamepad.mouse_task_id);
@@ -1657,6 +1828,8 @@ namespace input {
         platf::button_mouse(platf_input, BUTTON_RIGHT, true);
       }
       BOOST_LOG(info) << "[mouse_mode] Controller "sv << controller << " is a controller again"sv;
+      dili_rumble(input, controller, 1);
+      dili_notify("Mouse mode off");
     }
   }
 
@@ -1742,7 +1915,32 @@ namespace input {
       }
     }
 
+    // Dili: hold Select + another button for shortcuts
+    const bool shortcuts = config::input.controller_shortcuts;
+    const bool select_held = shortcuts && (platf::BACK & bf_new);
+    if (shortcuts && (platf::BACK & bf & bf_new)) {
+      gamepad.select_used = false;
+      gamepad.guide_fired = false;
+    }
+    if (select_held) {
+      dili_select_shortcuts(input, packet->controllerNumber, bf & bf_new & DILI_SHORTCUT_BUTTONS);
+    }
+
     if (gamepad.mouse_mode) {
+      if (!select_held) {
+        // A = Enter, B = Escape, D-pad = arrow keys, for menus and websites
+        auto key = [&](std::uint32_t button, std::uint16_t vk) {
+          if (button & bf) {
+            platf::keyboard_update(platf_input, vk, !(button & bf_new), 0);
+          }
+        };
+        key(platf::A, 0x0D);
+        key(platf::B, 0x1B);
+        key(platf::DPAD_UP, 0x26);
+        key(platf::DPAD_DOWN, 0x28);
+        key(platf::DPAD_LEFT, 0x25);
+        key(platf::DPAD_RIGHT, 0x27);
+      }
       // Right stick = pointer, left stick = scroll, LB = left click, RB = right click
       if (platf::LEFT_BUTTON & bf) {
         platf::button_mouse(platf_input, BUTTON_LEFT, !(platf::LEFT_BUTTON & bf_new));
@@ -1765,6 +1963,7 @@ namespace input {
 
             // Force the back button up
             gamepad.back_button_state = button_state_e::UP;
+            gamepad.guide_fired = true;
             state.buttonFlags &= ~platf::BACK;
             platf::gamepad_update(platf_input, gamepad.id, state);
 
@@ -1790,7 +1989,32 @@ namespace input {
       }
     }
 
-    platf::gamepad_update(platf_input, gamepad.id, gamepad_state);
+    platf::gamepad_state_t forward = gamepad_state;
+    if (shortcuts) {
+      // Select itself only reaches the game when it was not used for a shortcut:
+      // it is sent as a short press when released.
+      forward.buttonFlags &= ~platf::BACK;
+      if (select_held) {
+        forward.buttonFlags &= ~DILI_SHORTCUT_BUTTONS;
+      }
+      if ((platf::BACK & bf) && !(platf::BACK & bf_new) && !gamepad.select_used && !gamepad.guide_fired) {
+        auto tap = forward;
+        tap.buttonFlags |= platf::BACK;
+        platf::gamepad_update(platf_input, gamepad.id, tap);
+        task_pool.pushDelayed([input, controller = static_cast<int>(packet->controllerNumber)]() {
+          auto &gp = input->gamepads[controller];
+          if (gp.id < 0) {
+            return;
+          }
+          auto state = gp.gamepad_state;
+          state.buttonFlags &= ~platf::BACK;
+          dili_adjust_state(state);
+          platf::gamepad_update(platf_input, gp.id, state);
+        }, 80ms);
+      }
+    }
+    dili_adjust_state(forward);
+    platf::gamepad_update(platf_input, gamepad.id, forward);
 
     gamepad.gamepad_state = gamepad_state;
   }

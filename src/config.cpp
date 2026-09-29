@@ -869,6 +869,12 @@ namespace config {
     true,  // always send scancodes
     true,  // high resolution scrolling
     true,  // native pen/touch support
+
+    true,  // controller_shortcuts
+    true,  // controller_feedback
+    5,  // mouse_mode_speed
+    false,  // nintendo_layout
+    0,  // stick_deadzone
   };
 
   /**
@@ -1809,6 +1815,12 @@ namespace config {
     if (input.key_rightalt_to_key_win) {
       input.keybindings.emplace(0xA5, 0x5B);
     }
+
+    bool_f(vars, "controller_shortcuts", input.controller_shortcuts);
+    bool_f(vars, "controller_feedback", input.controller_feedback);
+    int_between_f(vars, "mouse_mode_speed", input.mouse_mode_speed, {1, 10});
+    bool_f(vars, "nintendo_layout", input.nintendo_layout);
+    int_between_f(vars, "stick_deadzone", input.stick_deadzone, {0, 30});
 
     to = std::numeric_limits<int>::min();
     int_f(vars, "back_button_timeout", to);

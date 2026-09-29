@@ -308,6 +308,13 @@ namespace config {
 
     bool high_resolution_scrolling;  ///< Enable high-resolution mouse-wheel events.
     bool native_pen_touch;  ///< Enable native pen and touch injection.
+
+    // Dili controller extras
+    bool controller_shortcuts;  ///< Hold Select plus another button for PC shortcuts (volume, screenshot, ...).
+    bool controller_feedback;  ///< Rumble and show a notification when a controller mode changes.
+    int mouse_mode_speed;  ///< Pointer speed in controller mouse mode, 1 (slow) to 10 (fast).
+    bool nintendo_layout;  ///< Swap A/B and X/Y for people used to Nintendo controllers.
+    int stick_deadzone;  ///< Stick dead zone in percent, for controllers whose sticks drift.
   };
 
   namespace flag {

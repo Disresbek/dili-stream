@@ -542,6 +542,126 @@ supported on the current platform.
     </tr>
 </table>
 
+### controller_shortcuts
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Hold Select (Back) and press another button for shortcuts: B closes the game, D-pad up/down changes the volume, D-pad left mutes, Y opens the on-screen keyboard, RB takes a screenshot, X opens Steam Big Picture. Select still works normally in games when pressed on its own.
+            @note{This option is part of Dili.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            controller_shortcuts = disabled
+            @endcode</td>
+    </tr>
+</table>
+
+### controller_feedback
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Rumble the controller and show a short notification on the streamed screen when a controller mode changes, for example when mouse mode turns on.
+            @note{This option is part of Dili.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            controller_feedback = disabled
+            @endcode</td>
+    </tr>
+</table>
+
+### mouse_mode_speed
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Pointer speed in controller mouse mode, from 1 (slow) to 10 (fast). Holding the left trigger slows the pointer down for precise movements.
+            @note{This option is part of Dili.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            5
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            mouse_mode_speed = 7
+            @endcode</td>
+    </tr>
+</table>
+
+### nintendo_layout
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Swap A with B and X with Y, for people used to the button layout of Nintendo controllers.
+            @note{This option is part of Dili.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            disabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            nintendo_layout = enabled
+            @endcode</td>
+    </tr>
+</table>
+
+### stick_deadzone
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Ignore small stick movements, in percent, for controllers whose sticks drift. The stick still reaches its full range.
+            @note{This option is part of Dili.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            0
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            stick_deadzone = 10
+            @endcode</td>
+    </tr>
+</table>
+
 ### keyboard
 
 <table>

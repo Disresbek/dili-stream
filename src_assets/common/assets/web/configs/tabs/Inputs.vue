@@ -244,6 +244,64 @@ watch(
       </div>
     </div>
 
+    <!-- Dili controller extras -->
+    <template v-if="config.controller === 'enabled'">
+      <Checkbox class="mb-3"
+                id="controller_shortcuts"
+                locale-prefix="config"
+                v-model="config.controller_shortcuts"
+                default="true"
+      ></Checkbox>
+      <div class="mb-3 dili-shortcut-list" v-if="config.controller_shortcuts === 'enabled'">
+        <div class="form-label">While holding Select</div>
+        <div class="dili-shortcuts">
+          <span><kbd>B</kbd> Close the game</span>
+          <span><kbd>D-pad up / down</kbd> Volume</span>
+          <span><kbd>D-pad left</kbd> Mute</span>
+          <span><kbd>Y</kbd> On-screen keyboard (Steam)</span>
+          <span><kbd>RB</kbd> Screenshot</span>
+          <span><kbd>X</kbd> Steam Big Picture</span>
+        </div>
+        <div class="form-text">Select on its own still works in games. Hold Start for a second to use the controller as a mouse.</div>
+      </div>
+
+      <Checkbox class="mb-3"
+                id="controller_feedback"
+                locale-prefix="config"
+                v-model="config.controller_feedback"
+                default="true"
+      ></Checkbox>
+
+      <div class="mb-3">
+        <label for="mouse_mode_speed" class="form-label">{{ $t('config.mouse_mode_speed') }}</label>
+        <div class="dili-slider">
+          <span>Slow</span>
+          <input id="mouse_mode_speed" type="range" min="1" max="10" step="1" v-model.number="config.mouse_mode_speed">
+          <span>Fast</span>
+        </div>
+        <div class="form-text">{{ $t('config.mouse_mode_speed_desc') }}</div>
+      </div>
+
+      <Checkbox class="mb-3"
+                id="nintendo_layout"
+                locale-prefix="config"
+                v-model="config.nintendo_layout"
+                default="false"
+      ></Checkbox>
+
+      <div class="mb-3">
+        <label for="stick_deadzone" class="form-label">{{ $t('config.stick_deadzone') }}</label>
+        <select id="stick_deadzone" class="form-select dili-guide-select" v-model="config.stick_deadzone">
+          <option :value="0">Off</option>
+          <option :value="5">Small (5%)</option>
+          <option :value="10">Medium (10%)</option>
+          <option :value="15">Large (15%)</option>
+          <option :value="20">Very large (20%)</option>
+        </select>
+        <div class="form-text">{{ $t('config.stick_deadzone_desc') }}</div>
+      </div>
+    </template>
+
     <!-- Enable Keyboard Input -->
     <hr>
     <Checkbox class="mb-3"
@@ -463,6 +521,42 @@ watch(
 </style>
 
 <style scoped>
+  .dili-shortcuts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px 16px;
+    margin: 4px 0 8px 0;
+    font-size: 14px;
+  }
+
+  .dili-shortcuts kbd {
+    display: inline-block;
+    min-width: 28px;
+    margin-right: 8px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--color-bg-muted);
+    color: var(--color-text-base);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .dili-slider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 420px;
+    font-size: 13px;
+    color: var(--color-text-muted);
+  }
+
+  .dili-slider input {
+    flex-grow: 1;
+    accent-color: var(--color-primary);
+  }
+
   .dili-fold {
     padding: 0;
     margin-bottom: 8px;
