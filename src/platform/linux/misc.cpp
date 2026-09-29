@@ -16,6 +16,7 @@
 #include <array>
 #include <cerrno>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -441,7 +442,65 @@ namespace platf {
     return "00:00:00:00:00:00"s;
   }
 
-  bp::child run_command(bool elevated, bool interactive, const std::string &cmd, boost::filesystem::path &working_dir, const bp::environment &env, FILE *file, std::error_code &ec, bp::group *group) {
+  /**
+   * @brief Make an app command run on the PC itself, no matter how Dili is installed.
+   *
+   * Inside a Flatpak or a distrobox, programs like Steam or Lutris live outside the sandbox.
+   * Commands are started through "flatpak-spawn --host" or "distrobox-host-exec" then.
+   * Commands written for a different setup (for example from an older Sunshine Flatpak)
+   * are translated, so existing app entries keep working.
+   *
+   * @param cmd The command as written in the app settings.
+   * @return The command to actually run.
+   */
+  static std::string dili_host_command(const std::string &cmd) {
+    std::error_code fs_ec;
+    std::string prefix;
+    if (std::filesystem::exists("/.flatpak-info", fs_ec)) {
+      prefix = "flatpak-spawn --host";
+    } else if (std::getenv("CONTAINER_ID") && std::filesystem::exists("/usr/bin/distrobox-host-exec", fs_ec)) {
+      prefix = "distrobox-host-exec";
+    }
+
+    auto trim_left = [](std::string text) {
+      text.erase(0, text.find_first_not_of(' '));
+      return text;
+    };
+
+    std::string rest = trim_left(cmd);
+    if (rest.empty()) {
+      return cmd;
+    }
+
+    bool setsid = false;
+    if (rest.starts_with("setsid ")) {
+      setsid = true;
+      rest = trim_left(rest.substr(7));
+    }
+    for (const std::string known : {"flatpak-spawn --host ", "distrobox-host-exec "}) {
+      if (rest.starts_with(known)) {
+        rest = trim_left(rest.substr(known.size()));
+        break;
+      }
+    }
+
+    std::string result;
+    if (!prefix.empty()) {
+      result = prefix + " ";
+    }
+    if (setsid) {
+      result += "setsid ";
+    }
+    result += rest;
+
+    if (result != cmd) {
+      BOOST_LOG(info) << "Running on this PC: "sv << result;
+    }
+    return result;
+  }
+
+  bp::child run_command(bool elevated, bool interactive, const std::string &original_cmd, boost::filesystem::path &working_dir, const bp::environment &env, FILE *file, std::error_code &ec, bp::group *group) {
+    const std::string cmd = dili_host_command(original_cmd);
     // clang-format off
     if (!group) {
       if (!file) {

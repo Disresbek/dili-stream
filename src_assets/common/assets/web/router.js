@@ -9,6 +9,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 const routes = [
   { path: '/', component: () => import('./Home.vue') },
   { path: '/apps', component: () => import('./Apps.vue') },
+  { path: '/apps/advanced', component: () => import('./AppsAdvanced.vue') },
   { path: '/clients', redirect: '/' },
   { path: '/config', component: () => import('./Config.vue') },
   { path: '/displays', component: () => import('./Displays.vue') },

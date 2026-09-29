@@ -72,6 +72,8 @@ namespace platf {
   bool setup_permissions();
   bool setup_screen_sharing();
   bool setup_mark_complete();
+  nlohmann::json detect_launchers();
+  std::string host_command_prefix();
 }  // namespace platf
 #endif
 
@@ -1319,6 +1321,30 @@ namespace confighttp {
   }
 
   /**
+   * @brief Get the game launchers installed on this PC, for the ready-made apps.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/launchers|:| GET|:| null}
+   */
+  void getLaunchers(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json output_tree;
+#ifdef SUNSHINE_BUILD_PORTAL
+    output_tree["launchers"] = platf::detect_launchers();
+#else
+    output_tree["launchers"] = nlohmann::json::array();
+#endif
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
    * @brief Get the state of the first-run setup wizard.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -1494,7 +1520,9 @@ namespace confighttp {
 
 #ifdef SUNSHINE_BUILD_PORTAL
     output_tree["virtual_display"] = platf::virtual_display_status();
+    output_tree["host_prefix"] = platf::host_command_prefix();
 #else
+    output_tree["host_prefix"] = "";
     output_tree["virtual_display"] = nlohmann::json {{"active", false}};
 #endif
     output_tree["status"] = true;
@@ -2638,6 +2666,7 @@ namespace confighttp {
     server.resource["^/api/autostart$"]["GET"] = getAutostart;
     server.resource["^/api/autostart$"]["POST"] = setAutostart;
     server.resource["^/api/setup$"]["GET"] = getSetup;
+    server.resource["^/api/launchers$"]["GET"] = getLaunchers;
     server.resource["^/api/setup$"]["POST"] = postSetup;
     server.resource["^/api/config$"]["POST"] = saveConfig;
     server.resource["^/api/configLocale$"]["GET"] = getLocale;

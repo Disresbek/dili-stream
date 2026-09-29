@@ -1,1059 +1,809 @@
 <template>
   <Navbar></Navbar>
-  <div id="content" class="container">
-    <div class="my-4">
-      <h1>{{ $t('apps.applications_title') }}<span v-if="apps.length"> ({{ appCountLabel }})</span></h1>
-      <p>{{ $t('apps.applications_desc') }}</p>
-    </div>
+  <div id="content" class="container dili-page">
+    <header class="dili-header">
+      <h1>Applications</h1>
+      <p>What your devices can start from Moonlight.</p>
+    </header>
 
-    <!-- Actions toolbar -->
-    <div class="toolbar apps-toolbar d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-      <!-- Left side actions -->
-      <div class="d-flex align-items-center gap-2">
-        <!-- Add new application -->
-        <button class="btn btn-primary" @click="newApp">
-          <layers-plus :size="18" class="icon"></layers-plus>
-          {{ $t('apps.add_new') }}
-        </button>
-      </div>
-      <!-- Right side actions -->
-      <div class="d-flex align-items-center gap-2" v-if="apps && apps.length > 0">
-        <!-- Sort by name toggle -->
-        <button class="btn btn-outline-secondary text-nowrap" type="button" @click="toggleSort"
-                :class="{ active: sortMode !== 'default' }"
-                :aria-pressed="sortMode !== 'default'"
-                :title="$t('apps.sort_by_name') + ': ' + sortModeLabel">
-          <arrow-up-down v-if="sortMode === 'default'" :size="16" class="icon me-1"></arrow-up-down>
-          <arrow-up v-else-if="sortMode === 'asc'" :size="16" class="icon me-1"></arrow-up>
-          <arrow-down v-else :size="16" class="icon me-1"></arrow-down>
-          {{ $t('apps.sort_by_name') }}
-        </button>
-        <!-- Search box -->
-        <div class="input-group">
-          <label for="app-search" class="visually-hidden">{{ $t('apps.search_placeholder') }}</label>
-          <input id="app-search" type="text" class="form-control" v-model="searchQuery" :placeholder="$t('apps.search_placeholder')" />
-          <button v-if="searchQuery" class="btn btn-outline-secondary" type="button" @click="resetSearchQuery" :aria-label="$t('_common.close')">
-            <x :size="16" class="icon"></x>
+    <div v-if="loading" class="dili-muted">Loading…</div>
+
+    <template v-else-if="editing">
+      <!-- Simple editor -->
+      <section class="dili-panel dili-editor">
+        <h2 class="dili-editor-title">{{ editing.index === -1 ? 'Add an app' : (editing.lockName ? 'Picture for ' : 'Edit ') + (editing.original.name || 'app') }}</h2>
+
+        <div class="dili-picture">
+          <div class="dili-picture-preview">
+            <img v-if="editing.index !== -1 && !editing.pictureChanged" :src="`./api/covers/${editing.index}`" alt="">
+            <img v-else-if="editing.pictureUrl" :src="editing.pictureUrl" alt="">
+          </div>
+          <div class="dili-picture-side">
+            <div class="dili-row-title">Picture</div>
+            <div class="dili-help">This picture is shown for the app in Moonlight.</div>
+            <button type="button" class="dili-pill dili-pill-outline dili-pill-small" @click="openCoverSearch">Find a picture</button>
+          </div>
+        </div>
+
+        <div v-if="coverSearch" class="dili-covers">
+          <div class="dili-cover-search">
+            <input v-model="coverSearch.query" type="text" placeholder="Game name" @keyup.enter="runCoverSearch">
+            <button type="button" class="dili-pill dili-pill-small" @click="runCoverSearch">Search</button>
+          </div>
+          <div v-if="coverSearch.loading" class="dili-help">Searching…</div>
+          <div v-else-if="coverSearch.results.length === 0" class="dili-help">No pictures found. Try a shorter name.</div>
+          <div class="dili-cover-grid">
+            <button
+              v-for="c in coverSearch.results"
+              :key="c.key"
+              type="button"
+              class="dili-cover-pick"
+              :title="c.name"
+              @click="pickCover(c)"
+            >
+              <img :src="c.url" :alt="c.name" loading="lazy">
+            </button>
+          </div>
+        </div>
+
+        <div class="dili-field" v-if="!editing.lockName">
+          <label for="appName">Name</label>
+          <input id="appName" v-model="editing.name" type="text" placeholder="For example: Cyberpunk 2077">
+          <span class="dili-help">This is what you see in Moonlight.</span>
+        </div>
+
+        <div class="dili-field" v-if="!editing.lockName">
+          <label for="appCommand">Program to start</label>
+          <input id="appCommand" v-model="editing.command" type="text" placeholder="For example: steam steam://rungameid/1091500">
+          <span class="dili-help">Leave this empty to just show your desktop.</span>
+        </div>
+
+        <div class="dili-toggle-row" v-if="!editing.lockName">
+          <div>
+            <div class="dili-row-title">Close it when the stream ends</div>
+            <div class="dili-help">When you stop streaming, Dili closes the program. If you quit the program, the stream ends too.</div>
+          </div>
+          <button
+            type="button"
+            class="dili-switch"
+            :class="{ on: editing.closeOnEnd }"
+            :aria-pressed="editing.closeOnEnd ? 'true' : 'false'"
+            aria-label="Close it when the stream ends"
+            @click="editing.closeOnEnd = !editing.closeOnEnd"
+          >
+            <span></span>
           </button>
-          <span v-else class="input-group-text">
-            <search :size="16" class="icon"></search>
-          </span>
         </div>
-      </div>
-    </div>
 
-    <!-- Apps Grid -->
-    <div class="row g-3" v-if="displayedApps.length > 0">
-      <div class="col-12 col-sm-6 col-md-4 col-lg-3" v-for="{ app, index } in displayedApps" :key="index">
-        <div class="card app-card h-100">
-          <div class="app-poster-container">
-            <img
-              v-if="app['image-path']"
-              :src="'/api/covers/' + index"
-              class="app-poster"
-              :alt="app.name"
-              @error="handleImageError"
-            />
-            <div v-else class="app-poster-placeholder">
-              <span class="app-initial">{{ app.name.charAt(0).toUpperCase() }}</span>
-            </div>
-            <div class="app-poster-overlay">
-              <div v-if="app.cmd" class="app-overlay-row" :title="app.cmd">
-                <terminal :size="14" class="icon me-1"></terminal>
-                <span class="app-detail-text">{{ app.cmd }}</span>
-              </div>
-              <div v-if="app['working-dir']" class="app-overlay-row" :title="app['working-dir']">
-                <folder :size="14" class="icon me-1"></folder>
-                <span class="app-detail-text">{{ app['working-dir'] }}</span>
-              </div>
-              <div class="app-overlay-badges">
-                <span v-if="app.elevated" class="badge app-flag-badge">{{ $t('apps.badge_admin') }}</span>
-                <span v-if="app.detached && app.detached.length" class="badge app-flag-badge">{{ $t('apps.badge_detached') }}</span>
-                <span v-if="app['prep-cmd'] && app['prep-cmd'].length" class="badge app-flag-badge">{{ $t('apps.badge_app_prep') }}</span>
-                <span v-if="app['exclude-global-prep-cmd']" class="badge app-flag-badge">{{ $t('apps.badge_no_global_prep') }}</span>
-                <span v-if="app['auto-detach']" class="badge app-flag-badge">{{ $t('apps.badge_auto_detach') }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="card-body d-flex flex-column">
-            <h5 class="card-title mb-3">{{ app.name }}</h5>
-            <div class="mt-auto d-flex gap-2">
-              <button class="btn btn-sm btn-primary flex-fill" @click="editApp(index)">
-                <edit :size="16" class="icon"></edit>
-                {{ $t('apps.edit') }}
-              </button>
-              <button class="btn btn-sm btn-danger" @click="showDeleteModal(index)">
-                <trash-2 :size="16" class="icon"></trash-2>
-              </button>
-            </div>
-          </div>
+        <p v-if="editing.hasAdvanced" class="dili-help">
+          This app has extra settings from the advanced editor. They are kept when you save here.
+        </p>
+        <p v-if="error" class="dili-error">{{ error }}</p>
+
+        <div class="dili-editor-actions">
+          <button
+            v-if="editing.index !== -1 && !editing.lockName"
+            type="button"
+            class="dili-pill dili-pill-danger"
+            @click="removeEditing"
+          >
+            {{ confirmDelete ? 'Tap again to remove' : 'Remove app' }}
+          </button>
+          <span class="dili-grow"></span>
+          <button type="button" class="dili-pill dili-pill-outline" @click="cancelEdit">Cancel</button>
+          <button type="button" class="dili-pill" :disabled="(!editing.lockName && !editing.name.trim()) || busy" @click="saveEditing">Save</button>
         </div>
-      </div>
-    </div>
 
-    <!-- No search results -->
-    <div v-else-if="apps && apps.length > 0" class="card">
-      <div class="card-body text-center py-5">
-        <p class="text-muted">{{ $t('apps.no_search_results') }}</p>
-      </div>
-    </div>
+        <RouterLink to="/apps/advanced" class="dili-advanced">
+          <ChevronRight :size="18"></ChevronRight>
+          Advanced app settings
+        </RouterLink>
+      </section>
+    </template>
 
-    <!-- Empty State -->
-    <div v-else class="card">
-      <div class="card-body text-center py-5">
-        <p class="text-muted">{{ $t('apps.no_applications') }}</p>
-      </div>
-    </div>
-
-    <!-- Edit / Add Application modal -->
-    <div class="modal fade" ref="editModal" tabindex="-1" aria-labelledby="appEditModalLabel"
-         aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
-      <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-lg-down">
-        <div class="modal-content" v-if="editForm">
-          <div class="modal-header">
-            <h5 class="modal-title" id="appEditModalLabel">
-              {{ editModalTitle }}
-            </h5>
-            <button type="button" class="btn-close" @click="closeEditModal"
-              :aria-label="$t('_common.close')"></button>
-          </div>
-          <div class="modal-body">
-            <!-- Application Name -->
-            <div class="mb-3">
-              <label for="appName" class="form-label">{{ $t('apps.app_name') }}</label>
-              <input type="text" class="form-control" id="appName" aria-describedby="appNameHelp" v-model="editForm.name" />
-              <div id="appNameHelp" class="form-text">{{ $t('apps.app_name_desc') }}</div>
-            </div>
-            <!-- output -->
-            <div class="mb-3">
-              <label for="appOutput" class="form-label">{{ $t('apps.output_name') }}</label>
-              <div class="input-group">
-                <input type="text" class="form-control monospace" id="appOutput" aria-describedby="appOutputHelp"
-                  v-model="editForm.output" />
-                <button class="btn btn-secondary" type="button"
-                  @click="browseFor('any', 'file_browser.select_file', editForm.output, v => editForm.output = v)">
-                  <folder-open :size="18" class="icon"></folder-open>
-                </button>
-              </div>
-              <div id="appOutputHelp" class="form-text">{{ $t('apps.output_desc') }}</div>
-            </div>
-            <!-- prep-cmd -->
-            <Checkbox class="mb-3"
-                      id="excludeGlobalPrep"
-                      label="apps.global_prep_name"
-                      desc="apps.global_prep_desc"
-                      v-model="editForm['exclude-global-prep-cmd']"
-                      default="true"
-                      inverse-values
-            ></Checkbox>
-            <div class="mb-3">
-              <label for="appName" class="form-label">{{ $t('apps.cmd_prep_name') }}</label>
-              <div class="form-text">{{ $t('apps.cmd_prep_desc') }}</div>
-              <div class="d-flex justify-content-start mb-3 mt-3" v-if="editForm['prep-cmd'].length === 0">
-                <button class="btn btn-success" @click="addPrepCmd">
-                  <plus :size="18" class="icon"></plus>
-                  {{ $t('apps.add_cmds') }}
-                </button>
-              </div>
-              <table class="table" v-if="editForm['prep-cmd'].length > 0">
-                <thead>
-                  <tr>
-                    <th scope="col">
-                      <play :size="18" class="icon"></play>
-                      {{ $t('_common.do_cmd') }}
-                    </th>
-                    <th scope="col">
-                      <rotate-ccw :size="18" class="icon"></rotate-ccw>
-                      {{ $t('_common.undo_cmd') }}
-                    </th>
-                    <th scope="col" v-if="platform === 'windows'">
-                      <shield :size="18" class="icon"></shield>
-                      {{ $t('_common.run_as') }}
-                    </th>
-                    <th scope="col"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(c, i) in editForm['prep-cmd']" :key="i">
-                    <td>
-                      <div class="input-group">
-                        <label :for="`prep-cmd-do-${i}`" class="visually-hidden">{{ $t('_common.do_cmd') }}</label>
-                        <input :id="`prep-cmd-do-${i}`" type="text" class="form-control monospace" v-model="c.do" />
-                        <button class="btn btn-secondary btn-sm" type="button" @click="browsePrep(i, 'do')">
-                          <folder-open :size="14" class="icon"></folder-open>
-                        </button>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="input-group">
-                        <label :for="`prep-cmd-undo-${i}`" class="visually-hidden">{{ $t('_common.undo_cmd') }}</label>
-                        <input :id="`prep-cmd-undo-${i}`" type="text" class="form-control monospace" v-model="c.undo" />
-                        <button class="btn btn-secondary btn-sm" type="button" @click="browsePrep(i, 'undo')">
-                          <folder-open :size="14" class="icon"></folder-open>
-                        </button>
-                      </div>
-                    </td>
-                    <td v-if="platform === 'windows'" class="align-middle">
-                      <Checkbox :id="'prep-cmd-admin-' + i"
-                                label="_common.elevated"
-                                desc=""
-                                v-model="c.elevated"
-                      ></Checkbox>
-                    </td>
-                    <td class="align-middle">
-                      <button class="btn btn-danger btn-sm ms-2" @click="deletePrepCmd(i)">
-                        <trash-2 :size="16" class="icon"></trash-2>
-                      </button>
-                      <button class="btn btn-success btn-sm ms-2" @click="addPrepCmd">
-                        <plus :size="16" class="icon"></plus>
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <!-- detached -->
-            <div class="mb-3">
-              <label for="appName" class="form-label">{{ $t('apps.detached_cmds') }}</label>
-              <div v-for="(c,i) in editForm.detached" :key="i" class="d-flex justify-content-between align-items-center my-2">
-                <label :for="`detached-command-${i}`" class="visually-hidden">{{ $t('apps.detached_cmds') }}</label>
-                <input :id="`detached-command-${i}`" type="text" v-model="editForm.detached[i]" class="form-control monospace">
-                <button class="btn btn-secondary btn-sm ms-2" @click="browseDetached(i)">
-                  <folder-open :size="14" class="icon"></folder-open>
-                </button>
-                <button class="btn btn-danger btn-sm ms-2" @click="editForm.detached.splice(i,1)">
-                  <trash-2 :size="16" class="icon"></trash-2>
-                </button>
-                <button class="btn btn-success btn-sm ms-2" @click="addDetached">
-                  <plus :size="16" class="icon"></plus>
-                </button>
-              </div>
-              <div class="d-flex justify-content-start mb-3 mt-3" v-if="editForm.detached.length === 0">
-                <button class="btn btn-success" @click="addDetached">
-                  <plus :size="18" class="icon"></plus>
-                  {{ $t('apps.detached_cmds_add') }}
-                </button>
-              </div>
-              <div class="form-text">
-                {{ $t('apps.detached_cmds_desc') }}<br>
-                <b>{{ $t('_common.note') }}</b> {{ $t('apps.detached_cmds_note') }}
-              </div>
-            </div>
-            <!-- command -->
-            <div class="mb-3">
-              <label for="appCmd" class="form-label">{{ $t('apps.cmd') }}</label>
-              <div class="input-group">
-                <input type="text" class="form-control monospace" id="appCmd" aria-describedby="appCmdHelp"
-                  v-model="editForm.cmd" />
-                <button class="btn btn-secondary" type="button"
-                  @click="browseFor('executable', 'file_browser.select_executable', editForm.cmd, v => editForm.cmd = v)">
-                  <folder-open :size="18" class="icon"></folder-open>
-                </button>
-              </div>
-              <div id="appCmdHelp" class="form-text">
-                {{ $t('apps.cmd_desc') }}<br>
-                <b>{{ $t('_common.note') }}</b> {{ $t('apps.cmd_note') }}
-              </div>
-            </div>
-            <!-- working dir -->
-            <div class="mb-3">
-              <label for="appWorkingDir" class="form-label">{{ $t('apps.working_dir') }}</label>
-              <div class="input-group">
-                <input type="text" class="form-control monospace" id="appWorkingDir" aria-describedby="appWorkingDirHelp"
-                  v-model="editForm['working-dir']" />
-                <button class="btn btn-secondary" type="button"
-                  @click="browseFor('directory', 'file_browser.select_directory', editForm['working-dir'], v => editForm['working-dir'] = v)">
-                  <folder-open :size="18" class="icon"></folder-open>
-                </button>
-              </div>
-              <div id="appWorkingDirHelp" class="form-text">{{ $t('apps.working_dir_desc') }}</div>
-            </div>
-            <!-- elevation -->
-            <Checkbox v-if="platform === 'windows'"
-                      class="mb-3"
-                      id="appElevation"
-                      label="_common.run_as"
-                      desc="apps.run_as_desc"
-                      v-model="editForm.elevated"
-                      default="false"
-            ></Checkbox>
-            <!-- auto-detach -->
-            <Checkbox class="mb-3"
-                      id="autoDetach"
-                      label="apps.auto_detach"
-                      desc="apps.auto_detach_desc"
-                      v-model="editForm['auto-detach']"
-                      default="true"
-            ></Checkbox>
-            <!-- wait for all processes -->
-            <Checkbox class="mb-3"
-                      id="waitAll"
-                      label="apps.wait_all"
-                      desc="apps.wait_all_desc"
-                      v-model="editForm['wait-all']"
-                      default="true"
-            ></Checkbox>
-            <!-- exit timeout -->
-            <div class="mb-3">
-              <label for="exitTimeout" class="form-label">{{ $t('apps.exit_timeout') }}</label>
-              <input type="number" class="form-control monospace" id="exitTimeout" aria-describedby="exitTimeoutHelp"
-                     v-model="editForm['exit-timeout']" min="0" placeholder="5" />
-              <div id="exitTimeoutHelp" class="form-text">{{ $t('apps.exit_timeout_desc') }}</div>
-            </div>
-            <div class="mb-3">
-              <label for="appImagePath" class="form-label">{{ $t('apps.image') }}</label>
-              <div class="input-group">
-                <input type="text" class="form-control monospace" id="appImagePath" aria-describedby="appImagePathHelp"
-                  v-model="editForm['image-path']" />
-                <button class="btn btn-secondary" type="button"
-                  @click="browseFor('file', 'file_browser.select_file', editForm['image-path'], v => editForm['image-path'] = v)">
-                  <folder-open :size="18" class="icon"></folder-open>
-                </button>
-                <button class="btn btn-secondary" type="button" @click="showCoverFinder">
-                  <search :size="18" class="icon"></search>
-                  {{ $t('apps.find_cover') }}
-                </button>
-              </div>
-              <div id="appImagePathHelp" class="form-text">{{ $t('apps.image_desc') }}</div>
-            </div>
-            <div class="env-hint alert alert-info">
-              <div class="form-text">
-                <h4>{{ $t('apps.env_vars_about') }}</h4>
-                {{ $t('apps.env_vars_desc') }}
-              </div>
-              <table class="env-table">
-                <tr>
-                  <th scope="col">{{ $t('apps.env_var_name') }}</th>
-                  <th scope="col">{{ $t('apps.env_var_description') }}</th>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_APP_ID</td>
-                  <td>{{ $t('apps.env_app_id') }}</td>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_APP_NAME</td>
-                  <td>{{ $t('apps.env_app_name') }}</td>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_CLIENT_NAME</td>
-                  <td>{{ $t('apps.env_client_name') }}</td>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_CLIENT_WIDTH</td>
-                  <td>{{ $t('apps.env_client_width') }}</td>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_CLIENT_HEIGHT</td>
-                  <td>{{ $t('apps.env_client_height') }}</td>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_CLIENT_FPS</td>
-                  <td>{{ $t('apps.env_client_fps') }}</td>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_CLIENT_HDR</td>
-                  <td>{{ $t('apps.env_client_hdr') }}</td>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_CLIENT_GCMAP</td>
-                  <td>{{ $t('apps.env_client_gcmap') }}</td>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_CLIENT_HOST_AUDIO</td>
-                  <td>{{ $t('apps.env_client_host_audio') }}</td>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_CLIENT_ENABLE_SOPS</td>
-                  <td>{{ $t('apps.env_client_enable_sops') }}</td>
-                </tr>
-                <tr>
-                  <td style="font-family: monospace">SUNSHINE_CLIENT_AUDIO_CONFIGURATION</td>
-                  <td>{{ $t('apps.env_client_audio_config') }}</td>
-                </tr>
-              </table>
-              <div class="form-text" v-if="platform === 'windows'"><b>{{ $t('apps.env_qres_example') }}</b>
-                <pre>cmd /C &lt;{{ $t('apps.env_qres_path') }}&gt;\QRes.exe /X:%SUNSHINE_CLIENT_WIDTH% /Y:%SUNSHINE_CLIENT_HEIGHT% /R:%SUNSHINE_CLIENT_FPS%</pre>
-              </div>
-              <div class="form-text" v-else-if="platform === 'freebsd' || platform === 'linux'"><b>{{ $t('apps.env_xrandr_example') }}</b>
-                <pre>sh -c "xrandr --output HDMI-1 --mode \"${SUNSHINE_CLIENT_WIDTH}x${SUNSHINE_CLIENT_HEIGHT}\" --rate ${SUNSHINE_CLIENT_FPS}"</pre>
-              </div>
-              <div class="form-text" v-else-if="platform === 'macos'"><b>{{ $t('apps.env_displayplacer_example') }}</b>
-                <pre>sh -c "displayplacer "id:&lt;screenId&gt; res:${SUNSHINE_CLIENT_WIDTH}x${SUNSHINE_CLIENT_HEIGHT} hz:${SUNSHINE_CLIENT_FPS} scaling:on origin:(0,0) degree:0""</pre>
-              </div>
-              <div class="form-text"><a
-                  :href="`${documentationBaseUrl}/md_docs_2app__examples.html`"
-                  target="_blank">{{ $t('_common.see_more') }}</a></div>
-            </div>
-          </div>
-          <!-- Save buttons -->
-          <div class="modal-footer">
-            <button @click="closeEditModal" class="btn btn-secondary">
-              <x :size="18" class="icon"></x>
-              {{ $t('_common.cancel') }}
-            </button>
-            <button class="btn btn-primary" @click="save">
-              <save :size="18" class="icon"></save>
-              {{ $t('_common.save') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Cover Finder modal -->
-    <div class="modal fade" id="coverFinderModal" tabindex="-1" aria-labelledby="coverFinderModalLabel" aria-hidden="true" ref="coverFinderModal">
-      <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-md-down">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="coverFinderModalLabel">
-              <span v-if="coverSearching">{{ $t('apps.searching_covers') }}</span>
-              <span v-else-if="coverCandidates.length > 0">{{ $t('apps.covers_found') }} ({{ coverCandidates.length }})</span>
-              <span v-else>{{ $t('apps.no_covers_found') }}</span>
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" :aria-label="$t('_common.close')"></button>
-          </div>
-          <div class="modal-body">
-            <div class="mb-3">
-              <div class="input-group">
-                <label for="cover-search-query" class="visually-hidden">{{ $t('_common.search') }}</label>
-                <input
-                  id="cover-search-query"
-                  type="text"
-                  class="form-control"
-                  v-model="coverSearchQuery"
-                  :placeholder="editForm?.name"
-                  @keyup.enter="performCoverSearch"
-                />
-                <button class="btn btn-primary" type="button" @click="performCoverSearch">
-                  <search :size="18" class="icon"></search>
-                  {{ $t('_common.search') }}
-                </button>
-              </div>
-              <div class="form-text mt-2">
-                <b>{{ $t('_common.note') }}</b> {{ $t('apps.cover_search_hint') }}
-                <a href="https://www.igdb.com/" target="_blank" rel="noopener noreferrer">IGDB</a>
-              </div>
-            </div>
-            <div class="cover-results" :class="{ busy: coverFinderBusy }">
-              <div class="row">
-                <div v-if="coverSearching" class="col-12 col-sm-6 col-lg-4 mb-3">
-                  <div class="cover-container">
-                    <output class="spinner-border">
-                      <span class="visually-hidden">{{ $t('apps.loading') }}</span>
-                    </output>
-                  </div>
+    <template v-else>
+      <!-- Ready-made apps -->
+      <section class="dili-section">
+        <h2>Ready-made apps</h2>
+        <p class="dili-help">Switch on the apps you want to see in Moonlight. Dili sets them up for you.</p>
+        <div class="dili-panel">
+          <template v-for="(preset, i) in presets" :key="preset.name">
+            <div v-if="i > 0" class="dili-divider"></div>
+            <div class="dili-toggle-row">
+              <div class="dili-preset">
+                <img :src="preset.icon" alt="" class="dili-preset-img">
+                <div>
+                  <div class="dili-row-title">{{ preset.name }}</div>
+                  <div class="dili-help">{{ preset.text }}</div>
                 </div>
-                <button type="button" v-for="cover in coverCandidates" :key="cover.url" class="cover-choice col-12 col-sm-6 col-lg-3 mb-3"
-                  @click="useCover(cover)">
-                  <div class="cover-container result">
-                    <img class="rounded" :src="cover.url" :alt="cover.name" />
-                  </div>
-                  <span class="d-block text-nowrap text-center text-truncate">
-                    {{cover.name}}
-                  </span>
+              </div>
+              <div class="dili-preset-side">
+                <button
+                  v-if="presetIndex(preset) !== -1"
+                  type="button"
+                  class="dili-link"
+                  @click="startEdit(presetIndex(preset), true)"
+                >
+                  Picture
                 </button>
+                <span class="dili-state">{{ presetIndex(preset) !== -1 ? 'In Moonlight' : (preset.installed ? 'Off' : 'Not installed') }}</span>
+              <button
+                type="button"
+                class="dili-switch"
+                :class="{ on: presetIndex(preset) !== -1 }"
+                :aria-pressed="presetIndex(preset) !== -1 ? 'true' : 'false'"
+                :aria-label="preset.name"
+                :disabled="busy || (!preset.installed && presetIndex(preset) === -1)"
+                @click="togglePreset(preset)"
+              >
+                <span></span>
+              </button>
               </div>
             </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <x :size="18" class="icon"></x>
-              {{ $t('_common.cancel') }}
-            </button>
-          </div>
+          </template>
         </div>
-      </div>
-    </div>
+        <p class="dili-help">Moonlight shows changes the next time you open your PC in Moonlight.</p>
+      </section>
 
-    <!-- Delete confirmation modal -->
-    <div class="modal fade" ref="deleteModal" tabindex="-1" aria-labelledby="appDeleteModalLabel" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content" v-if="deleteTarget">
-          <div class="modal-header">
-            <h5 class="modal-title" id="appDeleteModalLabel">{{ $t('apps.delete_title') }}</h5>
-            <button type="button" class="btn-close" @click="closeDeleteModal"
-              :aria-label="$t('_common.close')"></button>
-          </div>
-          <div class="modal-body">
-            <i18n-t keypath="apps.delete_confirm" tag="span">
-              <template #name><strong>{{ deleteTarget.name }}</strong></template>
-            </i18n-t>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" @click="closeDeleteModal">
-              <x :size="18" class="icon"></x>
-              {{ $t('_common.cancel') }}
-            </button>
-            <button type="button" class="btn btn-danger" @click="confirmDelete">
-              <trash-2 :size="18" class="icon"></trash-2>
-              {{ $t('apps.delete') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      <!-- Own apps -->
+      <section class="dili-section">
+        <h2>Your apps</h2>
+        <div class="dili-grid">
+          <button
+            v-for="app in ownApps"
+            :key="app.index"
+            type="button"
+            class="dili-app"
+            @click="startEdit(app.index)"
+          >
+            <div class="dili-cover">
+              <img :src="`./api/covers/${app.index}`" :alt="''" loading="lazy" @error="$event.target.style.display = 'none'">
+              <span v-if="runningApp === app.name" class="dili-live">Playing now</span>
+            </div>
+            <div class="dili-app-name">{{ app.name }}</div>
+            <div class="dili-help dili-ellipsis">{{ commandOf(app) || 'Desktop only' }}</div>
+          </button>
 
-    <!-- Shared file browser modal -->
-    <div class="modal fade" ref="fileBrowserModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-md-down">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">{{ fileBrowserTitle || $t('file_browser.title') }}</h5>
-            <button type="button" class="btn-close" @click="fileBrowserClose" :aria-label="$t('_common.close')"></button>
-          </div>
-          <div class="modal-body">
-            <!-- Path input -->
-            <div class="input-group mb-2">
-              <label for="file-browser-path" class="visually-hidden">{{ $t('file_browser.title') }}</label>
-              <input id="file-browser-path" type="text" class="form-control monospace" v-model="fileBrowserTypedPath"
-                @input="fileBrowserOnTypedInput" @keyup.enter="fileBrowserNavigate(fileBrowserTypedPath)" />
-              <button class="btn btn-secondary" type="button" @click="fileBrowserNavigate(fileBrowserTypedPath)">
-                <arrow-right :size="16" class="icon"></arrow-right>
-              </button>
-            </div>
-            <!-- Up button -->
-            <div class="mb-2">
-              <button class="btn btn-sm btn-outline-secondary" type="button"
-                :disabled="fileBrowserLoading || fileBrowserParentPath === fileBrowserCurrentPath"
-                @click="fileBrowserNavigateUp">
-                <folder-up :size="16" class="icon me-1"></folder-up>
-                {{ $t('file_browser.up') }}
-              </button>
-            </div>
-            <!-- Error -->
-            <div v-if="fileBrowserError" class="alert alert-danger py-2 small">{{ fileBrowserError }}</div>
-            <!-- Loading -->
-            <div v-if="fileBrowserLoading" class="text-center py-3">
-              <output class="spinner-border spinner-border-sm">
-                <span class="visually-hidden">{{ $t('_common.loading') }}</span>
-              </output>
-            </div>
-            <!-- Entries -->
-            <div v-else class="list-group" style="max-height: 400px; overflow-y: auto;">
-              <div v-if="fileBrowserEntries.length === 0" class="list-group-item text-muted text-center">
-                {{ $t('file_browser.empty') }}
-              </div>
-              <button v-for="entry in fileBrowserEntries" :key="entry.path" type="button"
-                class="list-group-item list-group-item-action d-flex align-items-center py-1"
-                :class="{ active: fileBrowserSelectedPath === entry.path }"
-                @click="fileBrowserSelectEntry(entry)" @dblclick="fileBrowserActivateEntry(entry)">
-                <hard-drive v-if="!fileBrowserCurrentPath && entry.type === 'directory'" :size="16" class="icon me-2 flex-shrink-0"></hard-drive>
-                <folder v-else-if="entry.type === 'directory'" :size="16" class="icon me-2 flex-shrink-0 text-warning"></folder>
-                <file-text v-else :size="16" class="icon me-2 flex-shrink-0"></file-text>
-                <span class="text-truncate">{{ entry.name }}</span>
-              </button>
-            </div>
-          </div>
-          <div class="modal-footer flex-wrap gap-2">
-            <div class="flex-grow-1 text-muted small text-truncate" v-if="fileBrowserSelectedPath">
-              <code>{{ fileBrowserSelectedPath }}</code>
-            </div>
-            <button type="button" class="btn btn-secondary" @click="fileBrowserClose">
-              <x :size="16" class="icon me-1"></x>
-              {{ $t('_common.cancel') }}
-            </button>
-            <button type="button" class="btn btn-primary" @click="fileBrowserConfirm"
-              :disabled="!fileBrowserSelectedPath && !fileBrowserTypedPath">
-              <check :size="16" class="icon me-1"></check>
-              {{ $t('file_browser.select') }}
-            </button>
-          </div>
+          <button type="button" class="dili-app dili-add" @click="startAdd">
+            <Plus :size="32"></Plus>
+            <div class="dili-app-name">Add an app</div>
+          </button>
         </div>
-      </div>
-    </div>
+      </section>
+    </template>
   </div>
 </template>
 
 <script>
-  import { toRaw } from 'vue'
   import Navbar from './Navbar.vue'
-  import Checkbox from './Checkbox.vue'
   import { apiFetch } from './fetch_utils'
-  import SunshineVersion from './sunshine_version'
-  import { Modal } from 'bootstrap/dist/js/bootstrap'
-  import {
-    ArrowDown,
-    ArrowRight,
-    ArrowUp,
-    ArrowUpDown,
-    Check,
-    Edit,
-    FileText,
-    Folder,
-    FolderOpen,
-    FolderUp,
-    HardDrive,
-    LayersPlus,
-    Play,
-    Plus,
-    RotateCcw,
-    Save,
-    Search,
-    Shield,
-    Terminal,
-    Trash2,
-    X,
-  } from '@lucide/vue'
+  import { loadPresets } from './presets'
+  import { searchCovers, useCover } from './covers'
+  import { ChevronRight, Plus } from '@lucide/vue'
 
-  /**
-   * Return the GameDB bucket for an application name.
-   *
-   * @param {string} name Application name to categorize.
-   * @returns {string} The normalized GameDB bucket name.
-   */
-  function getSearchBucket(name) {
-    const bucket = name.substring(0, Math.min(name.length, 2)).toLowerCase().replaceAll(/[^a-z\d]/g, '');
-    return bucket || '@';
-  }
-
-  /**
-   * Search GameDB for cover candidates matching an application name.
-   *
-   * @param {string} name Application name to search for.
-   * @returns {Promise<object[]>} Matching cover candidates.
-   */
-  function searchCovers(name) {
-    if (!name) {
-      return Promise.resolve([]);
-    }
-    let searchName = name.replaceAll(/\s+/g, '.').toLowerCase();
-
-    // Use raw.githubusercontent.com to avoid CORS issues as we migrate the CNAME
-    let dbUrl = "https://raw.githubusercontent.com/LizardByte/GameDB/gh-pages";
-    let bucket = getSearchBucket(name);
-    return fetch(`${dbUrl}/buckets/${bucket}.json`).then(function (r) {
-      if (!r.ok) throw new Error("Failed to search covers");
-      return r.json();
-    }).then(maps => Promise.all(Object.keys(maps).map(id => {
-      let item = maps[id];
-      if (item.name.replaceAll(/\s+/g, '.').toLowerCase().startsWith(searchName)) {
-        return fetch(`${dbUrl}/games/${id}.json`).then(function (r) {
-          return r.json();
-        }).catch(() => null);
-      }
-      return null;
-    }).filter(Boolean)))
-      .then(results => results
-        .filter(item => item && item.cover && item.cover.url)
-        .map(game => {
-          const thumb = game.cover.url;
-          const dotIndex = thumb.lastIndexOf('.');
-          const slashIndex = thumb.lastIndexOf('/');
-          if (dotIndex < 0 || slashIndex < 0) {
-            return null;
-          }
-          const slug = thumb.substring(slashIndex + 1, dotIndex);
-          return {
-            name: game.name,
-            key: `igdb_${game.id}`,
-            url: `https://images.igdb.com/igdb/image/upload/t_cover_big/${slug}.jpg`,
-            saveUrl: `https://images.igdb.com/igdb/image/upload/t_cover_big_2x/${slug}.png`,
-          }
-        }).filter(Boolean));
+  // Ready-made apps (shared with the setup wizard), shown with their picture
+  function toCards(presets) {
+    return presets.map((p) => ({
+      name: p.app.name,
+      text: p.installed === false ? 'Steam is not installed on this PC.' : p.description,
+      installed: p.installed !== false,
+      icon: `./assets/apps/${p.app['image-path']}`,
+      app: p.app,
+    }));
   }
 
   export default {
     components: {
       Navbar,
-      Checkbox,
-      ArrowDown,
-      ArrowRight,
-      ArrowUp,
-      ArrowUpDown,
-      Check,
-      Edit,
-      FileText,
-      Folder,
-      FolderOpen,
-      FolderUp,
-      HardDrive,
-      LayersPlus,
-      Play,
+      ChevronRight,
       Plus,
-      RotateCcw,
-      Save,
-      Search,
-      Shield,
-      Terminal,
-      Trash2,
-      X,
     },
     data() {
       return {
+        loading: true,
         apps: [],
-        editForm: null,
-        detachedCmd: "",
-        coverSearching: false,
-        coverFinderBusy: false,
-        coverCandidates: [],
-        coverSearchQuery: "",
-        platform: "",
-        fileBrowserType: "any",
-        fileBrowserTitle: "",
-        fileBrowserCallback: null,
-        fileBrowserCurrentPath: "",
-        fileBrowserParentPath: "",
-        fileBrowserEntries: [],
-        fileBrowserLoading: false,
-        fileBrowserError: "",
-        fileBrowserSelectedPath: "",
-        fileBrowserTypedPath: "",
-        searchQuery: "",
-        sortMode: "default",
-        deleteTarget: null,
-        version: null,
-        githubVersion: null,
+        presets: [],
+        runningApp: '',
+        editing: null,
+        coverSearch: null,
+        confirmDelete: false,
+        busy: false,
+        error: '',
       };
     },
     computed: {
-      installedVersionNotStable() {
-        if (!this.githubVersion || !this.version) {
-          return false;
-        }
-        return this.version.isGreater(this.githubVersion);
-      },
-      documentationBaseUrl() {
-        const docsVersion = this.installedVersionNotStable ? 'master' : 'latest'
-        return `https://docs.lizardbyte.dev/projects/sunshine/${docsVersion}`
-      },
-      displayedApps() {
-        let list = this.apps.map((app, index) => ({ app, index }));
-
-        const query = this.searchQuery.trim().toLowerCase();
-        if (query) {
-          list = list.filter(({ app }) =>
-            (app.name || "").toLowerCase().includes(query)
-          );
-        }
-
-        if (this.sortMode !== "default") {
-          // Apps can be created without a name, so we compare name || ""
-          list.sort((a, b) => {
-            const result = (a.app.name || "").localeCompare(
-              b.app.name || "", undefined, { sensitivity: "base" }
-            );
-            // localeCompare returns 0 if the strings are equal, a negative value if a < b, and a positive value if a > b
-            return this.sortMode === "asc"
-              ? result
-              : -result;
-          });
-        }
-
-        return list;
-      },
-      sortModeLabel() {
-        switch (this.sortMode) {
-          case "asc":
-            return this.$t("apps.sort_ascending");
-          case "desc":
-            return this.$t("apps.sort_descending");
-          default:
-            return this.$t("apps.sort_default");
-        }
-      },
-      appCountLabel() {
-        const total = this.apps.length;
-        const shown = this.displayedApps.length;
-        return shown === total
-          ? `${total}`
-          : `${shown} / ${total}`;
-      },
-      editModalTitle() {
-        if (!this.editForm) {
-          return "";
-        }
-        const action = this.editForm.index === -1
-          ? this.$t("apps.add_new")
-          : this.$t("apps.edit");
-
-        return this.editForm.name
-          ? `${action}: ${this.editForm.name}`
-          : action;
+      ownApps() {
+        const presetNames = this.presets.map((p) => p.name);
+        return this.apps
+          .map((app, index) => ({ ...app, index }))
+          .filter((app) => !presetNames.includes(app.name));
       },
     },
-    created() {
-      this.loadApps();
-
-      fetch("./api/config")
-        .then(r => r.json())
-        .then(r => {
-          this.platform = r.platform;
-          this.version = new SunshineVersion(null, r.version);
-        });
-
-      fetch("https://api.github.com/repos/LizardByte/Sunshine/releases/latest")
-        .then((r) => r.json())
-        .then((r) => this.githubVersion = new SunshineVersion(r, null))
-        .catch((e) => console.error(e));
+    async created() {
+      try {
+        this.presets = toCards(await loadPresets());
+        const status = await fetch('./api/status').then((r) => r.json());
+        this.runningApp = status.app || '';
+      } catch (e) {
+        console.error(e);
+      }
+      await this.loadApps();
+      this.loading = false;
     },
     methods: {
-      newApp() {
-        this.editForm = {
-          name: "",
-          output: "",
-          cmd: "",
-          index: -1,
-          "exclude-global-prep-cmd": false,
-          elevated: false,
-          "auto-detach": true,
-          "wait-all": true,
-          "exit-timeout": 5,
-          "prep-cmd": [],
-          detached: [],
-          "image-path": ""
-        };
-        this.openEditModal();
+      async loadApps() {
+        const r = await fetch('./api/apps').then((x) => x.json());
+        this.apps = r.apps || [];
       },
-      editApp(id) {
-        this.editForm = structuredClone(toRaw(this.apps[id]));
-        this.editForm.index = id;
-        if (this.editForm["prep-cmd"] === undefined)
-          this.editForm["prep-cmd"] = [];
-        if (this.editForm["detached"] === undefined)
-          this.editForm["detached"] = [];
-        if (this.editForm["exclude-global-prep-cmd"] === undefined)
-          this.editForm["exclude-global-prep-cmd"] = false;
-        if (this.editForm["elevated"] === undefined && this.platform === 'windows') {
-          this.editForm["elevated"] = false;
-        }
-        if (this.editForm["auto-detach"] === undefined) {
-          this.editForm["auto-detach"] = true;
-        }
-        if (this.editForm["wait-all"] === undefined) {
-          this.editForm["wait-all"] = true;
-        }
-        if (this.editForm["exit-timeout"] === undefined) {
-          this.editForm["exit-timeout"] = 5;
-        }
-        this.openEditModal();
+      presetIndex(preset) {
+        return this.apps.findIndex((a) => a.name === preset.name);
       },
-      showDeleteModal(id) {
-        this.deleteTarget = { index: id, name: this.apps[id].name };
-        this.$nextTick(() => {
-          Modal.getOrCreateInstance(this.$refs.deleteModal).show();
+      commandOf(app) {
+        if (app.cmd) return app.cmd;
+        if (app.detached && app.detached.length) return app.detached[0];
+        return '';
+      },
+      async saveApp(app, index) {
+        const body = { 'prep-cmd': [], detached: [], ...app, index };
+        const r = await apiFetch('./api/apps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
         });
+        return r.status === 200;
       },
-      closeDeleteModal() {
-        const modal = Modal.getInstance(this.$refs.deleteModal);
-        if (modal) modal.hide();
-      },
-      loadApps() {
-        return fetch("./api/apps")
-          .then((r) => r.json())
-          .then((r) => {
-            this.apps = r.apps;
-          });
-      },
-      confirmDelete() {
-        apiFetch("./api/apps/" + this.deleteTarget.index, {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json"
-          },
-        }).then((r) => {
-          if (r.status === 200) document.location.reload();
+      async deleteApp(index) {
+        const r = await apiFetch('./api/apps/' + index, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
         });
+        return r.status === 200;
       },
-      addPrepCmd() {
-        let template = {
-          do: "",
-          undo: ""
-        };
-
-        if (this.platform === 'windows') {
-          template = { ...template, elevated: false };
+      async togglePreset(preset) {
+        this.busy = true;
+        try {
+          const index = this.presetIndex(preset);
+          if (index === -1) {
+            await this.saveApp(preset.app, -1);
+          } else {
+            await this.deleteApp(index);
+          }
+          await this.loadApps();
+        } finally {
+          this.busy = false;
         }
-
-        this.editForm["prep-cmd"].push(template);
       },
-      deletePrepCmd(index) {
-        this.editForm["prep-cmd"].splice(index, 1);
+      openCoverSearch() {
+        this.coverSearch = { query: this.editing.name || '', loading: false, results: [] };
+        this.runCoverSearch();
       },
-      addDetached() {
-        this.editForm.detached.push("");
+      async runCoverSearch() {
+        const q = this.coverSearch.query.trim();
+        if (!q) return;
+        this.coverSearch.loading = true;
+        try {
+          this.coverSearch.results = await searchCovers(q);
+        } catch (e) {
+          this.coverSearch.results = [];
+        } finally {
+          this.coverSearch.loading = false;
+        }
       },
-      showCoverFinder() {
-        // Reset search state
-        this.coverCandidates = [];
-        this.coverSearchQuery = "";
-
-        this.showStacked(this.$refs.coverFinderModal);
-
-        // Perform initial search with app name
-        this.performCoverSearch();
+      async pickCover(cover) {
+        try {
+          this.editing.imagePath = await useCover(cover);
+          this.editing.pictureUrl = cover.url;
+          this.editing.pictureChanged = true;
+          this.coverSearch = null;
+        } catch (e) {
+          this.error = 'The picture could not be downloaded. Please try another one.';
+        }
       },
-      performCoverSearch() {
-        this.coverSearching = true;
-        this.coverCandidates = [];
-
-        // Use search query if provided, otherwise fall back to app name
-        const searchTerm = this.coverSearchQuery.trim() || this.editForm["name"].toString();
-
-        searchCovers(searchTerm)
-          .then(list => this.coverCandidates = list)
-          .finally(() => this.coverSearching = false);
+      startAdd() {
+        this.error = '';
+        this.confirmDelete = false;
+        this.coverSearch = null;
+        this.editing = { index: -1, original: {}, name: '', command: '', closeOnEnd: true, hasAdvanced: false, lockName: false, imagePath: '', pictureUrl: '', pictureChanged: false };
       },
-      useCover(cover) {
-        this.coverFinderBusy = true;
-        apiFetch("./api/covers/upload", {
-          method: "POST",
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            key: cover.key,
-            url: cover.saveUrl,
-          })
-        }).then(r => {
-          if (!r.ok) throw new Error("Failed to download covers");
-          return r.json();
-        }).then(body => {
-          this.editForm["image-path"] = body.path;
-          // Close the modal
-          const modalEl = this.$refs.coverFinderModal;
-          if (modalEl) {
-            const modal = Modal.getInstance(modalEl);
-            if (modal) {
-              modal.hide();
+      startEdit(index, lockName = false) {
+        const app = this.apps[index];
+        this.coverSearch = null;
+        this.error = '';
+        this.confirmDelete = false;
+        const hasPrep = (app['prep-cmd'] || []).length > 0;
+        const manyDetached = (app.detached || []).length > 1;
+        this.editing = {
+          index,
+          original: app,
+          name: app.name || '',
+          command: this.commandOf(app),
+          closeOnEnd: !!app.cmd || !(app.detached && app.detached.length),
+          hasAdvanced: !lockName && (hasPrep || manyDetached),
+          lockName,
+          imagePath: '',
+          pictureUrl: '',
+          pictureChanged: false,
+        };
+      },
+      cancelEdit() {
+        this.editing = null;
+      },
+      async saveEditing() {
+        const e = this.editing;
+        if (e.lockName) {
+          const app = { ...e.original };
+          if (e.imagePath) app['image-path'] = e.imagePath;
+          this.busy = true;
+          try {
+            if (await this.saveApp(app, e.index)) {
+              await this.loadApps();
+              this.editing = null;
+            } else {
+              this.error = 'Saving did not work. Please try again.';
             }
+          } finally {
+            this.busy = false;
           }
-        })
-          .finally(() => this.coverFinderBusy = false);
-      },
-      browseFor(type, titleKey, startPath, callback) {
-        this.fileBrowserType = type;
-        this.fileBrowserTitle = this.$t(titleKey);
-        this.fileBrowserCallback = callback;
-        this.fileBrowserSelectedPath = startPath || '';
-        this.fileBrowserTypedPath = startPath || '';
-        this.fileBrowserError = '';
-        this.fileBrowserNavigate(startPath || '');
-        this.showStacked(this.$refs.fileBrowserModal);
-      },
-      fileBrowserClose() {
-        const modal = Modal.getInstance(this.$refs.fileBrowserModal);
-        if (modal) modal.hide();
-      },
-      fileBrowserConfirm() {
-        const path = this.fileBrowserSelectedPath || this.fileBrowserTypedPath;
-        if (path) {
-          if (this.fileBrowserCallback) {
-            this.fileBrowserCallback(path);
-            this.fileBrowserCallback = null;
+          return;
+        }
+        const app = { ...e.original, name: e.name.trim() };
+        const command = e.command.trim();
+        // One simple rule: "close on end" means Dili watches the program (cmd), otherwise it just starts it (detached)
+        const otherDetached = (app.detached || []).slice(1);
+        delete app.cmd;
+        app.detached = otherDetached;
+        if (command) {
+          if (e.closeOnEnd) {
+            app.cmd = command;
+          } else {
+            app.detached = [command, ...otherDetached];
           }
-          this.fileBrowserClose();
+        }
+        if (e.imagePath) {
+          app['image-path'] = e.imagePath;
+        }
+        if (!app['image-path']) {
+          app['image-path'] = command ? 'box.png' : 'desktop.png';
+        }
+        this.busy = true;
+        this.error = '';
+        try {
+          if (await this.saveApp(app, e.index)) {
+            await this.loadApps();
+            this.editing = null;
+          } else {
+            this.error = 'Saving did not work. Please try again.';
+          }
+        } finally {
+          this.busy = false;
         }
       },
-      fileBrowserNavigate(path) {
-        this.fileBrowserLoading = true;
-        this.fileBrowserError = '';
-        const params = new URLSearchParams({ type: this.fileBrowserType });
-        if (path) params.set('path', path);
-        fetch(`./api/browse?${params.toString()}`)
-          .then(r => r.ok ? r.json() : r.json().then(e => { throw new Error(e.error || 'Browse failed'); }))
-          .then(data => {
-            this.fileBrowserCurrentPath = data.path ?? '';
-            this.fileBrowserParentPath = data.parent ?? '';
-            this.fileBrowserEntries = data.entries ?? [];
-            this.fileBrowserTypedPath = data.path ?? '';
-            this.fileBrowserSelectedPath = this.fileBrowserType === 'directory' ? (data.path ?? '') : '';
-          })
-          .catch(err => { this.fileBrowserError = err.message; })
-          .finally(() => { this.fileBrowserLoading = false; });
-      },
-      fileBrowserNavigateUp() {
-        this.fileBrowserNavigate(this.fileBrowserParentPath);
-      },
-      fileBrowserSelectEntry(entry) {
-        if (entry.type === 'directory') {
-          this.fileBrowserNavigate(entry.path);
-        } else {
-          this.fileBrowserSelectedPath = entry.path;
-          this.fileBrowserTypedPath = entry.path;
+      async removeEditing() {
+        if (!this.confirmDelete) {
+          this.confirmDelete = true;
+          setTimeout(() => (this.confirmDelete = false), 4000);
+          return;
         }
-      },
-      fileBrowserActivateEntry(entry) {
-        if (entry.type === 'directory') {
-          this.fileBrowserNavigate(entry.path);
-        } else {
-          this.fileBrowserSelectedPath = entry.path;
-          this.fileBrowserTypedPath = entry.path;
-          this.fileBrowserConfirm();
+        this.busy = true;
+        try {
+          await this.deleteApp(this.editing.index);
+          await this.loadApps();
+          this.editing = null;
+        } finally {
+          this.busy = false;
         }
-      },
-      fileBrowserOnTypedInput() {
-        this.fileBrowserSelectedPath = this.fileBrowserTypedPath;
-      },
-      browsePrep(index, field) {
-        const current = this.editForm['prep-cmd'][index][field] || '';
-        this.browseFor('executable', 'file_browser.select_executable', current, (path) => {
-          this.editForm['prep-cmd'][index][field] = path;
-        });
-      },
-      browseDetached(index) {
-        const current = this.editForm.detached[index] || '';
-        this.browseFor('executable', 'file_browser.select_executable', current, (path) => {
-          this.editForm.detached[index] = path;
-        });
-      },
-      save() {
-        this.editForm["image-path"] = this.editForm["image-path"].toString().replaceAll('"', '');
-        apiFetch("./api/apps", {
-          method: "POST",
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(this.editForm),
-        }).then((r) => {
-          if (r.status === 200) document.location.reload();
-        });
-      },
-      handleImageError(event) {
-        // Hide the broken image and show placeholder instead
-        event.target.style.display = 'none';
-        const placeholder = event.target.nextElementSibling;
-        if (placeholder && placeholder.classList.contains('app-poster-placeholder')) {
-          placeholder.style.display = 'flex';
-        }
-      },
-      resetSearchQuery() {
-        this.searchQuery = "";
-      },
-      toggleSort() {
-        // Sorting goes default -> ascending -> descending -> default
-        if (this.sortMode === "default")
-          this.sortMode = "asc";
-        else if (this.sortMode === "asc")
-          this.sortMode = "desc";
-        else
-          this.sortMode = "default";
-      },
-      openEditModal() {
-        // Use $nextTick because if the edit version of the modal is created too early, it breaks...
-        this.$nextTick(() => {
-          Modal.getOrCreateInstance(this.$refs.editModal).show();
-        });
-      },
-      closeEditModal() {
-        const modal = Modal.getInstance(this.$refs.editModal);
-        if (modal) modal.hide();
-      },
-      // We need to update the z-index since bootstrap gives all modals the same z-index
-      // Fixes the stacking issue of modals (cover finder / file browser)
-      showStacked(modalEl) {
-        modalEl.addEventListener('show.bs.modal', () => {
-          const openCount = document.querySelectorAll('.modal.show').length;
-          const z = 1055 + (openCount + 1) * 20;
-          modalEl.style.zIndex = z;
-
-          requestAnimationFrame(() => {
-            const backdrops = document.querySelectorAll('.modal-backdrop');
-            const backdrop = backdrops[backdrops.length - 1];
-            if (backdrop) backdrop.style.zIndex = z - 10;
-          });
-        }, { once: true });
-        Modal.getOrCreateInstance(modalEl).show();
       },
     },
-  }
+  };
 </script>
+
+<style scoped>
+  .dili-page {
+    max-width: 1100px;
+    padding-top: 36px;
+    padding-bottom: 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .dili-header h1 {
+    margin: 0 0 6px 0;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .dili-header p,
+  .dili-muted,
+  .dili-help {
+    margin: 0;
+    color: var(--color-text-muted);
+  }
+
+  .dili-help {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .dili-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .dili-section h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+
+  .dili-panel {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+  }
+
+  .dili-divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: 0 20px;
+  }
+
+  .dili-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 16px 20px;
+  }
+
+  .dili-preset {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .dili-preset-img {
+    width: 48px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 8px;
+    background: var(--color-bg-muted);
+    flex-shrink: 0;
+  }
+
+  .dili-row-title {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .dili-switch {
+    flex-shrink: 0;
+    width: 50px;
+    height: 30px;
+    border: none;
+    border-radius: 15px;
+    background: var(--color-border-strong);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .dili-switch:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .dili-switch span {
+    display: block;
+    width: 26px;
+    height: 26px;
+    margin-left: 2px;
+    border-radius: 13px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transition: margin-left 0.15s ease;
+  }
+
+  .dili-switch.on {
+    background: var(--color-success);
+  }
+
+  .dili-switch.on span {
+    margin-left: 22px;
+  }
+
+  .dili-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 18px;
+  }
+
+  .dili-app {
+    text-align: left;
+    font: inherit;
+    color: var(--color-text-base);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    cursor: pointer;
+    min-width: 0;
+  }
+
+  .dili-app:hover {
+    border-color: var(--color-primary);
+  }
+
+  .dili-cover {
+    position: relative;
+    aspect-ratio: 3 / 4;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--color-bg-muted);
+  }
+
+  .dili-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .dili-live {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--color-on-primary);
+    background: var(--color-primary);
+    padding: 3px 10px;
+    border-radius: 10px;
+  }
+
+  .dili-app-name {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .dili-ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dili-add {
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    border-style: dashed;
+    color: var(--color-text-muted);
+  }
+
+  .dili-editor {
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    max-width: 640px;
+  }
+
+  .dili-editor-title {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  .dili-editor .dili-toggle-row {
+    padding: 0;
+  }
+
+  .dili-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .dili-field label {
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .dili-field input {
+    height: 46px;
+    padding: 0 14px;
+    border-radius: 12px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-bg-base);
+    color: var(--color-text-base);
+    font: inherit;
+  }
+
+  .dili-field input:focus {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 1px;
+  }
+
+  .dili-error {
+    margin: 0;
+    color: var(--color-danger);
+    font-size: 14px;
+  }
+
+  .dili-editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .dili-grow {
+    flex-grow: 1;
+  }
+
+  .dili-pill {
+    height: 44px;
+    padding: 0 20px;
+    border-radius: 22px;
+    border: none;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .dili-pill:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .dili-pill-outline {
+    background: transparent;
+    color: var(--color-text-base);
+    border: 1px solid var(--color-border-strong);
+  }
+
+  .dili-pill-danger {
+    background: transparent;
+    color: var(--color-danger);
+    border: 1px solid var(--color-danger);
+  }
+
+  .dili-advanced {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    color: var(--color-text-base);
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .dili-advanced:hover {
+    color: var(--color-primary);
+  }
+  .dili-preset-side {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+
+  .dili-state {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    min-width: 92px;
+    text-align: right;
+  }
+
+  .dili-link {
+    border: none;
+    background: none;
+    padding: 0 4px;
+    min-height: 36px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-primary);
+    cursor: pointer;
+  }
+
+  .dili-picture {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+  }
+
+  .dili-picture-preview {
+    width: 90px;
+    aspect-ratio: 3 / 4;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--color-bg-muted);
+    flex-shrink: 0;
+  }
+
+  .dili-picture-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .dili-picture-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .dili-pill-small {
+    height: 36px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+
+  .dili-covers {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+  }
+
+  .dili-cover-search {
+    display: flex;
+    gap: 10px;
+  }
+
+  .dili-cover-search input {
+    flex-grow: 1;
+    height: 36px;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid var(--color-border-strong);
+    background: var(--color-bg-base);
+    color: var(--color-text-base);
+    font: inherit;
+  }
+
+  .dili-cover-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 10px;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+
+  .dili-cover-pick {
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--color-bg-muted);
+    aspect-ratio: 3 / 4;
+    cursor: pointer;
+  }
+
+  .dili-cover-pick:hover {
+    border-color: var(--color-primary);
+  }
+
+  .dili-cover-pick img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+</style>

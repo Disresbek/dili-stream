@@ -120,6 +120,7 @@
 
 <script>
   import { apiFetch } from './fetch_utils'
+  import { addMissingPresets } from './presets'
   import { Check, Gamepad2, Wifi } from '@lucide/vue'
 
   export default {
@@ -224,6 +225,12 @@
         }
       },
       async finish(target) {
+        try {
+          // Desktop and Steam Big Picture are ready to use right away
+          await addMissingPresets();
+        } catch (e) {
+          console.error(e);
+        }
         await this.post('./api/setup', { action: 'complete' });
         this.$router.push(target);
       },

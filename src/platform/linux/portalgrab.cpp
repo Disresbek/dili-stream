@@ -179,11 +179,18 @@ namespace portal {
      * are sent to the streamed screen, so they are always visible on the device.
      */
     constexpr const char *KWIN_SCRIPT = R"js(
-// Sunshine virtual display: keep the stream's windows on the streamed screen,
+// Dili: keep the stream's windows on the streamed screen,
 // without taking windows away from someone using the PC at the same time.
 //
-// Rule: whatever is opened or clicked while the mouse pointer is on the streamed
-// screen belongs to the stream. Everything else stays where it is.
+// A window belongs to the stream when it
+//  - was opened shortly before or after the streamed screen appeared
+//    (apps that start with the stream, like Steam Big Picture or Lutris), or
+//  - is opened or clicked while the mouse pointer is on the streamed screen.
+// Everything else stays where it is.
+const WINDOW_SECONDS = 20;
+let recent = [];         // windows opened in the last few seconds
+let streamStart = 0;     // when the streamed screen appeared
+
 function virtualOutput() {
   const screens = workspace.screens;
   for (let i = 0; i < screens.length; i++) {
@@ -205,9 +212,12 @@ function eligible(window) {
   return window && !window.specialWindow && !window.transient && !window.popupWindow;
 }
 
+function streamJustStarted() {
+  return streamStart > 0 && Date.now() - streamStart < WINDOW_SECONDS * 1000;
+}
+
 function bringBack(window) {
-  // Only for windows that belong to the stream: games and Steam Big Picture often
-  // jump to another screen when they switch to fullscreen. Move them back.
+  // Games and Steam Big Picture often jump to another screen when they go fullscreen
   const output = virtualOutput();
   if (!output || !window.sunshineStream || window.output === output) {
     return;
@@ -216,8 +226,20 @@ function bringBack(window) {
   if (window.sunshineMoves > 10) {
     return;  // Never fight an application forever
   }
-  print("sunshine: bringing '" + window.caption + "' back to " + output.name);
+  print("dili: bringing '" + window.caption + "' back to " + output.name);
   workspace.sendClientToScreen(window, output);
+}
+
+function take(window, output) {
+  if (!window.sunshineStream) {
+    window.sunshineStream = true;
+    window.fullScreenChanged.connect(function () { bringBack(window); });
+    window.outputChanged.connect(function () { bringBack(window); });
+  }
+  if (window.output !== output) {
+    print("dili: moving '" + window.caption + "' to " + output.name);
+    workspace.sendClientToScreen(window, output);
+  }
 }
 
 function claim(window) {
@@ -228,22 +250,42 @@ function claim(window) {
   if (!output) {
     return;
   }
-  if (!window.sunshineStream && !pointerOn(output)) {
-    return;  // Opened or clicked at the PC: leave it alone
-  }
-  if (!window.sunshineStream) {
-    window.sunshineStream = true;
-    window.fullScreenChanged.connect(function () { bringBack(window); });
-    window.outputChanged.connect(function () { bringBack(window); });
-  }
-  if (window.output !== output) {
-    print("sunshine: moving '" + window.caption + "' to " + output.name);
-    workspace.sendClientToScreen(window, output);
+  if (window.sunshineStream || pointerOn(output) || streamJustStarted()) {
+    take(window, output);
   }
 }
 
-workspace.windowAdded.connect(claim);
+workspace.windowAdded.connect(function (window) {
+  if (eligible(window)) {
+    const now = Date.now();
+    recent.push({ window: window, time: now });
+    recent = recent.filter(function (r) { return now - r.time < WINDOW_SECONDS * 1000; });
+  }
+  claim(window);
+});
 workspace.windowActivated.connect(claim);
+workspace.windowRemoved.connect(function (window) {
+  recent = recent.filter(function (r) { return r.window !== window; });
+});
+
+// When the streamed screen appears, apps that were started just before it
+// (while Dili was still preparing the stream) move over too.
+function onScreensChanged() {
+  const output = virtualOutput();
+  if (output && streamStart === 0) {
+    streamStart = Date.now();
+    const now = Date.now();
+    recent.forEach(function (r) {
+      if (now - r.time < WINDOW_SECONDS * 1000 && eligible(r.window)) {
+        take(r.window, output);
+      }
+    });
+  } else if (!output) {
+    streamStart = 0;
+  }
+}
+workspace.screensChanged.connect(onScreensChanged);
+onScreensChanged();
 )js";
 
     /**
@@ -1427,10 +1469,6 @@ workspace.windowActivated.connect(claim);
       if (sv.users > 0 || sv.generation != generation) {
         return;  // Someone started using it again
       }
-      if (sv.script_loaded) {
-        virtual_display::unload_window_script();
-        sv.script_loaded = false;
-      }
       if (sv.vd) {
         virtual_display::restore(*sv.vd);
       }
@@ -1724,7 +1762,13 @@ namespace platf {
            << "After=graphical-session.target\n"
            << "PartOf=graphical-session.target\n\n"
            << "[Service]\n"
-           << "ExecStartPre=-/usr/bin/systemctl --user stop " << OLD_SUNSHINE_UNIT << "\n"
+           << "ExecStartPre=-/usr/bin/systemctl --user stop " << OLD_SUNSHINE_UNIT << "\n";
+      if (const char *container = std::getenv("CONTAINER_ID")) {
+        // Start the distrobox outside of this service first, so restarting Dili
+        // never shuts down the box (and every terminal open inside it)
+        unit << "ExecStartPre=-/usr/bin/systemd-run --user --scope --collect /usr/bin/podman start " << container << "\n";
+      }
+      unit
            << "ExecStart=" << autostart_command() << "\n"
            << "Restart=on-failure\n"
            << "RestartSec=5\n\n"
@@ -1769,6 +1813,67 @@ fi
 echo done
 )sh";
   }  // namespace
+
+  /**
+   * @brief Find the game launchers installed on this PC, with ready-to-use start commands.
+   *
+   * The commands work no matter how Dili itself runs (natively, in a distrobox or as a Flatpak),
+   * because they are prefixed with whatever is needed to start programs on the host.
+   *
+   * @return JSON array: id, installed, cmd, detached, undo, image.
+   */
+  nlohmann::json detect_launchers() {
+    using portal::virtual_display::run_host;
+    auto prefix = portal::virtual_display::host_prefix();
+
+    auto has_command = [&](const std::string &name) {
+      return !run_host("sh -c 'command -v " + name + "'").empty();
+    };
+    auto has_flatpak = [&](const std::string &app_id) {
+      return run_host("flatpak info --show-ref " + app_id).find(app_id) != std::string::npos;
+    };
+
+    // Returns the command that starts a program, or "" if it is not installed
+    auto starter = [&](const std::string &native, const std::string &flatpak_id) -> std::string {
+      if (!native.empty() && has_command(native)) {
+        return prefix + native;
+      }
+      if (!flatpak_id.empty() && has_flatpak(flatpak_id)) {
+        return prefix + "flatpak run " + flatpak_id;
+      }
+      return "";
+    };
+
+    nlohmann::json list = nlohmann::json::array();
+    auto add = [&](const std::string &id, const std::string &base, const std::string &args, const std::string &undo_args, const std::string &image) {
+      nlohmann::json item;
+      item["id"] = id;
+      item["installed"] = !base.empty();
+      item["detached"] = base.empty() ? "" : base + args;
+      item["undo"] = (base.empty() || undo_args.empty()) ? "" : base + undo_args;
+      item["image"] = image;
+      list.push_back(item);
+    };
+
+    const auto steam = starter("steam", "com.valvesoftware.Steam");
+    add("steam-big-picture", steam, " steam://open/bigpicture", " steam://close/bigpicture", "steam.png");
+    add("steam", steam, " steam://open/games", "", "steam.png");
+    add("heroic", starter("heroic", "com.heroicgameslauncher.hgl"), "", "", "");
+    add("lutris", starter("lutris", "net.lutris.Lutris"), "", "", "");
+    add("retrodeck", starter("retrodeck", "net.retrodeck.retrodeck"), "", "", "");
+    return list;
+  }
+
+  /**
+   * @brief Prefix that runs a command on the host, e.g. "flatpak-spawn --host" inside a Flatpak.
+   */
+  std::string host_command_prefix() {
+    auto prefix = portal::virtual_display::host_prefix();
+    while (!prefix.empty() && prefix.back() == ' ') {
+      prefix.pop_back();
+    }
+    return prefix;
+  }
 
   /**
    * @brief What the setup wizard needs to know about this PC.
