@@ -162,6 +162,8 @@
     Volume2,
   } from '@lucide/vue'
 
+  // Settings that are managed on other pages (Display & Quality), so no Reset here
+  const CHANGED_MARK_SKIP = new Set(["output_name", "vaapi_quality", "nvenc_preset", "sw_preset"]);
   const ENCODER_TAB_IDS = new Set(["nv", "amd", "qsv", "vaapi", "vt", "vulkan", "sw"]);
   // Dili: rarely needed sections, grouped under "Expert"
   const EXPERT_TAB_IDS = new Set(["advanced", "files"]);
@@ -328,7 +330,11 @@
           if (this.snapshot) {
             this.dirty = JSON.stringify(this.serialize()) !== this.snapshot;
           }
+          this.syncChangedMarks();
         },
+      },
+      currentTab() {
+        this.syncChangedMarks();
       },
     },
     created() {
@@ -342,6 +348,7 @@
           setTimeout(() => {
             this.snapshot = JSON.stringify(this.serialize());
             this.dirty = false;
+            this.syncChangedMarks();
           }, 300);
 
           if (this.platform === "windows") {
@@ -442,6 +449,42 @@
           else {
             return false
           }
+        });
+      },
+      /**
+       * Mark every setting that differs from its default with "Changed" and a Reset button.
+       * (On/off switches do this themselves.)
+       */
+      syncChangedMarks() {
+        this.$nextTick(() => {
+          const tab = this.tabs.find((t) => t.id === this.currentTab);
+          if (!tab || !this.config) return;
+          Object.entries(tab.options).forEach(([key, def]) => {
+            if (def !== null && typeof def === 'object') return;
+            if (CHANGED_MARK_SKIP.has(key)) return;
+            const el = document.getElementById(key);
+            if (!el || el.getAttribute('role') === 'switch') return;
+            const row = el.closest('.mb-3');
+            if (!row) return;
+            const changed = String(this.config[key] ?? '') !== String(def ?? '');
+            let mark = row.querySelector(':scope > .dili-changed-mark');
+            if (changed && !mark) {
+              mark = document.createElement('div');
+              mark.className = 'dili-changed-mark';
+              const pill = document.createElement('span');
+              pill.className = 'dili-changed-pill';
+              pill.textContent = 'Changed';
+              const reset = document.createElement('button');
+              reset.type = 'button';
+              reset.className = 'dili-changed-reset';
+              reset.textContent = 'Reset to default';
+              reset.addEventListener('click', () => { this.config[key] = def; });
+              mark.append(pill, reset);
+              row.appendChild(mark);
+            } else if (!changed && mark) {
+              mark.remove();
+            }
+          });
         });
       },
       discardChanges() {
@@ -756,5 +799,34 @@
   .dili-bar-btn:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+  .dili-changed-mark {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .dili-changed-pill {
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-on-primary);
+    background: var(--color-primary);
+  }
+
+  .dili-changed-reset {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .dili-unit {
+    max-width: 260px;
   }
 </style>

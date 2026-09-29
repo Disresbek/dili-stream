@@ -1,17 +1,26 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 const props = defineProps({
   platform: String,
   config: Object,
 })
 const config = ref(props.config)
+
+// Dili: show the bitrate in Mbps (Dili stores Kbps)
+const bitrateMbps = computed({
+  get: () => Math.round(Number(config.value.max_bitrate || 0) / 1000),
+  set: (v) => { config.value.max_bitrate = Math.max(0, Number(v) || 0) * 1000 },
+})
 </script>
 
 <template>
   <!--max_bitrate-->
   <div class="mb-3">
     <label for="max_bitrate" class="form-label">{{ $t("config.max_bitrate") }}</label>
-    <input type="number" class="form-control" id="max_bitrate" placeholder="0" v-model="config.max_bitrate" />
+    <div class="input-group dili-unit">
+      <input type="number" min="0" step="1" class="form-control" id="max_bitrate" placeholder="0" v-model="bitrateMbps" />
+      <span class="input-group-text">Mbps</span>
+    </div>
     <div class="form-text">{{ $t("config.max_bitrate_desc") }}</div>
   </div>
 

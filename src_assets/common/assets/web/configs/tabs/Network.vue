@@ -14,6 +14,12 @@ const props = defineProps({
 const defaultMoonlightPort = 47989
 
 const config = ref(props.config)
+
+// Dili: show the timeout in seconds (Dili stores milliseconds)
+const pingSeconds = computed({
+  get: () => Math.round(Number(config.value.ping_timeout || 10000) / 1000),
+  set: (v) => { config.value.ping_timeout = Math.max(1, Number(v) || 10) * 1000 },
+})
 const effectivePort = computed(() => Number(config.value?.port ?? defaultMoonlightPort))
 </script>
 
@@ -163,7 +169,10 @@ const effectivePort = computed(() => Number(config.value?.port ?? defaultMoonlig
     <!-- Ping Timeout -->
     <div class="mb-3">
       <label for="ping_timeout" class="form-label">{{ $t('config.ping_timeout') }}</label>
-      <input type="text" class="form-control" id="ping_timeout" placeholder="10000" v-model="config.ping_timeout" />
+      <div class="input-group dili-unit">
+        <input type="number" min="1" step="1" class="form-control" id="ping_timeout" placeholder="10" v-model="pingSeconds" />
+        <span class="input-group-text">seconds</span>
+      </div>
       <div class="form-text">{{ $t('config.ping_timeout_desc') }}</div>
     </div>
 

@@ -79,6 +79,7 @@ namespace platf {
   nlohmann::json test_app_command(const std::string &command);
   nlohmann::json ddc_monitors();
   nlohmann::json hardware_info();
+  bool open_settings_folder();
 }  // namespace platf
 #endif
 
@@ -1567,6 +1568,54 @@ namespace confighttp {
   }
 
   /**
+   * @brief Get the folder where Dili keeps its settings, apps and logs.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/paths|:| GET|:| null}
+   */
+  void getPaths(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json output_tree;
+    output_tree["folder"] = platf::appdata().string();
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
+   * @brief Open Dili's settings folder in the file manager on this PC.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/open-folder|:| POST|:| null}
+   */
+  void openFolder(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+    std::string client_id = get_client_id(request);
+    if (!validate_csrf_token(response, request, client_id)) {
+      return;
+    }
+
+    print_req(request);
+
+#ifdef SUNSHINE_BUILD_PORTAL
+    const bool ok = platf::open_settings_folder();
+#else
+    const bool ok = false;
+#endif
+    nlohmann::json output_tree;
+    output_tree["status"] = ok;
+    send_response(response, output_tree);
+  }
+
+  /**
    * @brief Get the sound outputs and graphics cards of this PC, for choices in Advanced.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2811,6 +2860,8 @@ namespace confighttp {
     server.resource["^/api/installed$"]["GET"] = getInstalled;
     server.resource["^/api/monitors$"]["GET"] = getMonitors;
     server.resource["^/api/hardware$"]["GET"] = getHardware;
+    server.resource["^/api/paths$"]["GET"] = getPaths;
+    server.resource["^/api/open-folder$"]["POST"] = openFolder;
     server.resource["^/api/clients/list$"]["GET"] = getClients;
     server.resource["^/api/clients/unpair$"]["POST"] = unpair;
     server.resource["^/api/clients/unpair-all$"]["POST"] = unpairAll;

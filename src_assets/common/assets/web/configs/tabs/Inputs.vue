@@ -72,6 +72,7 @@ const props = defineProps({
 const config = ref(props.config)
 
 // Dili: the Guide button setting as a switch with simple choices
+const showKeybindings = ref(false)
 const guideOn = computed(() => Number(config.value.back_button_timeout) >= 0)
 const guideTooShort = computed(() => guideOn.value && Number(config.value.back_button_timeout) < 300)
 function toggleGuide() {
@@ -297,6 +298,10 @@ watch(
         </a>
       </div>
       <div class="form-text mb-3">{{ $t('config.keybindings_desc') }}</div>
+      <button type="button" class="dili-fold" :aria-expanded="showKeybindings ? 'true' : 'false'" @click="showKeybindings = !showKeybindings">
+        {{ showKeybindings ? 'Hide key remapping' : `Show key remapping (${keybindingPairs.length} ${keybindingPairs.length === 1 ? 'rule' : 'rules'})` }}
+      </button>
+      <template v-if="showKeybindings">
 
       <div v-if="keybindingPairs.length === 0" class="alert alert-secondary py-2">
         {{ $t('config.keybindings_empty') }}
@@ -346,6 +351,7 @@ watch(
         <Plus :size="16" />
         {{ $t('config.keybindings_add') }}
       </button>
+      </template>
     </div>
 
     <!-- Enable Mouse Input -->
@@ -457,6 +463,18 @@ watch(
 </style>
 
 <style scoped>
+  .dili-fold {
+    padding: 0;
+    margin-bottom: 8px;
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
   .dili-guide-row {
     display: flex;
     align-items: center;

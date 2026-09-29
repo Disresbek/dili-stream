@@ -7,10 +7,26 @@ const props = defineProps({
 })
 
 const config = ref(props.config)
+
+// Dili: show where the files really are, with a button to open the folder
+import { apiFetch } from '../../fetch_utils'
+const folder = ref('')
+fetch('./api/paths').then((r) => r.json()).then((p) => { folder.value = p.folder || '' }).catch(() => {})
+function openFolder() {
+  apiFetch('./api/open-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+}
 </script>
 
 <template>
   <div id="files" class="config-page">
+    <div class="mb-3 dili-folder">
+      <div>
+        <div class="form-label">Dili's folder</div>
+        <div class="form-text">{{ folder || '…' }}</div>
+        <div class="form-text">All files below are stored here unless you enter a full path.</div>
+      </div>
+      <button type="button" class="dili-folder-btn" :disabled="!folder" @click="openFolder">Open folder</button>
+    </div>
     <!-- Apps File -->
     <div class="mb-3">
       <label for="file_apps" class="form-label">{{ $t('config.file_apps') }}</label>
@@ -56,3 +72,23 @@ const config = ref(props.config)
 
   </div>
 </template>
+
+<style scoped>
+  .dili-folder {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .dili-folder-btn {
+    flex-shrink: 0;
+    height: 38px;
+    padding: 0 16px;
+    border-radius: 19px;
+    border: 1px solid var(--color-border-strong);
+    background: transparent;
+    color: var(--color-text-base);
+    font-weight: 600;
+  }
+</style>

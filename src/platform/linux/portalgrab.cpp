@@ -2173,6 +2173,18 @@ echo done
   }
 
   /**
+   * @brief Open Dili's settings folder in the file manager of the PC.
+   */
+  bool open_settings_folder() {
+    const auto folder = platf::appdata().string();
+    if (folder.find('\'') != std::string::npos) {
+      return false;
+    }
+    portal::virtual_display::run_host("setsid -f xdg-open '" + folder + "' >/dev/null 2>&1 </dev/null");
+    return true;
+  }
+
+  /**
    * @brief Prefix that runs a command on the host, e.g. "flatpak-spawn --host" inside a Flatpak.
    */
   std::string host_command_prefix() {

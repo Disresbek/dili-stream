@@ -16,7 +16,10 @@ const config = ref(props.config)
     <!-- FEC Percentage -->
     <div class="mb-3">
       <label for="fec_percentage" class="form-label">{{ $t('config.fec_percentage') }}</label>
-      <input type="text" class="form-control" id="fec_percentage" placeholder="20" v-model="config.fec_percentage" />
+      <div class="input-group dili-unit">
+        <input type="number" min="1" max="255" class="form-control" id="fec_percentage" placeholder="20" v-model="config.fec_percentage" />
+        <span class="input-group-text">%</span>
+      </div>
       <div class="form-text">{{ $t('config.fec_percentage_desc') }}</div>
     </div>
 

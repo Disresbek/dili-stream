@@ -19,7 +19,14 @@ const outputNamePlaceholder = _outputNamePlaceholder;  // NOSONAR(javascript:S14
 </script>
 
 <template>
-  <div class="mb-3">
+  <div class="mb-3" v-if="platform === 'linux'">
+    <label for="output_name" class="form-label">{{ $t('config.output_name') }}</label>
+    <div class="dili-readonly" id="output_name">
+      <span>{{ config.output_name === 'virtual' ? 'A virtual screen for every stream' : (config.output_name || 'Automatic') }}</span>
+      <RouterLink to="/displays">Change on Display &amp; Quality</RouterLink>
+    </div>
+  </div>
+  <div class="mb-3" v-else>
     <label for="output_name" class="form-label">{{ $t('config.output_name') }}</label>
     <input type="text" class="form-control" id="output_name" :placeholder="outputNamePlaceholder"
            v-model="config.output_name"/>
@@ -65,3 +72,21 @@ const outputNamePlaceholder = _outputNamePlaceholder;  // NOSONAR(javascript:S14
     </div>
   </div>
 </template>
+
+<style scoped>
+  .dili-readonly {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--color-bg-subtle);
+  }
+
+  .dili-readonly a {
+    color: var(--color-primary);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+</style>
