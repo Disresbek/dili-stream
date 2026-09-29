@@ -160,6 +160,25 @@
         </p>
       </section>
 
+      <section class="dili-section">
+        <h2>Screen sharing</h2>
+        <div class="dili-panel">
+          <div class="dili-row">
+            <div>
+              <div class="dili-row-title">Ask for permission again</div>
+              <div class="dili-row-text">
+                KDE remembers that Dili may share your screen. If streams show a black picture, or you changed
+                something in KDE's screen sharing, reset it here. Dili restarts, and KDE asks you once more.
+              </div>
+              <div v-if="portalMessage" class="dili-row-text" :class="portalOk ? 'dili-ok-text' : 'dili-bad-text'">{{ portalMessage }}</div>
+            </div>
+            <button type="button" class="btn btn-outline-secondary dili-row-btn" :disabled="portalBusy" @click="resetPortal">
+              {{ portalBusy ? 'Resetting…' : (portalConfirm ? 'Tap again to reset' : 'Reset') }}
+            </button>
+          </div>
+        </div>
+      </section>
+
       <div class="dili-actions">
         <button type="button" class="btn btn-primary" :disabled="!dirty" @click="save">Save</button>
         <button type="button" class="btn btn-success" v-if="saved && !restarted" @click="apply">Apply now</button>
@@ -213,6 +232,10 @@
     },
     data() {
       return {
+        portalBusy: false,
+        portalConfirm: false,
+        portalMessage: '',
+        portalOk: false,
         presets: PRESETS,
         monitors: { available: false, monitors: [] },
         monitorsLoaded: false,
@@ -280,6 +303,31 @@
       }
     },
     methods: {
+      async resetPortal() {
+        if (!this.portalConfirm) {
+          this.portalConfirm = true;
+          setTimeout(() => (this.portalConfirm = false), 4000);
+          return;
+        }
+        this.portalConfirm = false;
+        this.portalBusy = true;
+        try {
+          const r = await apiFetch('./api/reset-portal-token', { method: 'POST', headers: { 'Content-Type': 'application/json' } }).then((x) => x.json());
+          this.portalOk = !!r.status;
+          if (r.status) {
+            this.portalMessage = 'Done. Dili restarts now, and KDE will ask for permission at the next stream.';
+            apiFetch('./api/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            setTimeout(() => window.location.reload(), 8000);
+          } else {
+            this.portalMessage = 'That did not work. Please try again.';
+            this.portalBusy = false;
+          }
+        } catch (e) {
+          this.portalOk = false;
+          this.portalMessage = 'That did not work. Please try again.';
+          this.portalBusy = false;
+        }
+      },
       selectPreset(id) {
         if (this.currentPreset === id && this.config.vaapi_quality) return;
         Object.assign(this.config, PRESETS.find((p) => p.id === id).values);
@@ -543,5 +591,21 @@
     color: var(--color-primary);
     font-weight: 600;
     margin-left: 4px;
+  }
+  .dili-row-btn {
+    flex-shrink: 0;
+    border-radius: 20px;
+    font-weight: 600;
+    padding: 6px 16px;
+  }
+
+  .dili-ok-text {
+    color: var(--color-success);
+    margin-top: 4px;
+  }
+
+  .dili-bad-text {
+    color: var(--color-danger);
+    margin-top: 4px;
   }
 </style>

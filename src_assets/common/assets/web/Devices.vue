@@ -62,7 +62,12 @@
 
     <!-- Paired devices -->
     <section class="dili-section">
-      <h2>Paired devices</h2>
+      <div class="dili-section-head">
+        <h2>Paired devices</h2>
+        <button v-if="clients.length > 1" type="button" class="dili-link-danger" @click="removeAll">
+          {{ confirmAll ? 'Tap again to remove all' : 'Remove all' }}
+        </button>
+      </div>
       <div class="dili-panel">
         <div v-if="clients.length === 0" class="dili-empty">No devices paired yet.</div>
         <template v-for="(c, i) in clients" :key="c.uuid">
@@ -71,7 +76,20 @@
             <div class="dili-tile">
               <monitor-smartphone :size="22"></monitor-smartphone>
             </div>
-            <div class="dili-device-name">{{ c.name || 'Unnamed device' }}</div>
+            <div class="dili-device-name">
+              {{ c.name || 'Unnamed device' }}
+              <div class="dili-device-state">{{ c.enabled === false ? 'Blocked: this device cannot start a stream' : 'Allowed to stream' }}</div>
+            </div>
+            <button
+              type="button"
+              class="dili-switch"
+              :class="{ on: c.enabled !== false }"
+              :aria-pressed="c.enabled !== false ? 'true' : 'false'"
+              :aria-label="'Allow ' + (c.name || 'this device') + ' to stream'"
+              @click="toggleAllowed(c)"
+            >
+              <span></span>
+            </button>
             <button
               type="button"
               class="dili-pill dili-pill-outline dili-pill-small"
@@ -107,6 +125,7 @@
         message: null,
         busy: false,
         confirmUuid: '',
+        confirmAll: false,
         timer: null,
       };
     },
@@ -193,6 +212,25 @@
           this.refresh();
           setTimeout(this.loadClients, 1500);
         }
+      },
+      async toggleAllowed(client) {
+        const enabled = client.enabled === false;
+        await apiFetch('./api/clients/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uuid: client.uuid, enabled }),
+        });
+        this.loadClients();
+      },
+      async removeAll() {
+        if (!this.confirmAll) {
+          this.confirmAll = true;
+          setTimeout(() => (this.confirmAll = false), 4000);
+          return;
+        }
+        this.confirmAll = false;
+        await apiFetch('./api/clients/unpair-all', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+        this.loadClients();
       },
       async remove(client) {
         if (this.confirmUuid !== client.uuid) {
@@ -554,4 +592,57 @@
     font-weight: 600;
   }
 
+  .dili-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .dili-link-danger {
+    border: none;
+    background: none;
+    color: var(--color-danger);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .dili-device-state {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--color-text-muted);
+  }
+
+  .dili-switch {
+    flex-shrink: 0;
+    width: 50px;
+    height: 30px;
+    border: none;
+    border-radius: 15px;
+    background: var(--color-border-strong);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .dili-switch span {
+    display: block;
+    width: 26px;
+    height: 26px;
+    margin-left: 2px;
+    border-radius: 13px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transition: margin-left 0.15s ease;
+  }
+
+  .dili-switch.on {
+    background: var(--color-success);
+  }
+
+  .dili-switch.on span {
+    margin-left: 22px;
+  }
 </style>

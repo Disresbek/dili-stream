@@ -9,6 +9,9 @@
         <RouterLink class="dili-nav-item" to="/" exact-active-class="active" active-class="">
           <Home :size="20"></Home><span>{{ $t('navbar.home') }}</span>
         </RouterLink>
+        <RouterLink class="dili-nav-item" to="/apps" active-class="active">
+          <Layers :size="20"></Layers><span>{{ $t('navbar.applications') }}</span>
+        </RouterLink>
         <RouterLink class="dili-nav-item" to="/displays" active-class="active">
           <Monitor :size="20"></Monitor><span>{{ $t('navbar.displays') }}</span>
         </RouterLink>
@@ -17,9 +20,6 @@
         </RouterLink>
 
         <div class="dili-nav-label">More</div>
-        <RouterLink class="dili-nav-item" to="/apps" active-class="active">
-          <Layers :size="20"></Layers><span>{{ $t('navbar.applications') }}</span>
-        </RouterLink>
         <RouterLink class="dili-nav-item" to="/featured" active-class="active">
           <Star :size="20"></Star><span>{{ $t('navbar.featured') }}</span>
         </RouterLink>
@@ -32,6 +32,16 @@
       </div>
 
       <div class="dili-sidebar-bottom">
+        <div class="dili-quick">
+          <button v-if="runningApp" type="button" class="dili-quick-btn" :title="'Close ' + runningApp" @click="confirmOr('close', closeApp)">
+            <CircleX :size="16"></CircleX>
+            <span>{{ confirm === 'close' ? 'Tap again to close' : 'Close ' + runningApp }}</span>
+          </button>
+          <button type="button" class="dili-quick-btn" title="Restart Dili" :disabled="restarting" @click="confirmOr('restart', restartDili)">
+            <RotateCw :size="16"></RotateCw>
+            <span>{{ restarting ? 'Restarting…' : (confirm === 'restart' ? 'Tap again to restart' : 'Restart Dili') }}</span>
+          </button>
+        </div>
         <div class="dili-pc">
           <div class="dili-pc-name">{{ hostName || 'This PC' }}</div>
           <div class="dili-pc-state">
@@ -70,9 +80,10 @@
 </template>
 
 <script>
-import { CircleUserRound, Home, Info, Layers, LogOut, Monitor, MonitorSmartphone, Settings, Shield, Star } from '@lucide/vue'
+import { CircleUserRound, CircleX, Home, RotateCw, Info, Layers, LogOut, Monitor, MonitorSmartphone, Settings, Shield, Star } from '@lucide/vue'
 import DiliThemeSwitch from './DiliThemeSwitch.vue'
 import DiliLogo from './DiliLogo.vue'
+import { apiFetch } from './fetch_utils'
 import Notification from './Notification.vue'
 
 export default {
@@ -89,12 +100,17 @@ export default {
     CircleUserRound,
     LogOut,
     Monitor,
-    MonitorSmartphone
+    MonitorSmartphone,
+    CircleX,
+    RotateCw
   },
   data() {
     return {
       hostName: '',
       streaming: false,
+      runningApp: '',
+      confirm: '',
+      restarting: false,
       timer: null,
     }
   },
@@ -113,9 +129,29 @@ export default {
         const s = await fetch('./api/status').then((r) => r.json())
         this.hostName = s.host_name || ''
         this.streaming = (s.sessions || 0) > 0
+        this.runningApp = s.app || ''
       } catch (e) {
         // The status is only a nice extra, ignore errors
       }
+    },
+    // Buttons that interrupt a stream need a second tap
+    confirmOr(action, run) {
+      if (this.confirm === action) {
+        this.confirm = ''
+        run()
+        return
+      }
+      this.confirm = action
+      setTimeout(() => { if (this.confirm === action) this.confirm = '' }, 4000)
+    },
+    async closeApp() {
+      await apiFetch('./api/apps/close', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      setTimeout(this.refresh, 1500)
+    },
+    restartDili() {
+      this.restarting = true
+      apiFetch('./api/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      setTimeout(() => window.location.reload(), 8000)
     },
     logout() {
       const cacheBuster = Date.now().toString()
@@ -269,6 +305,38 @@ body.dili-has-sidebar {
   background: var(--color-bg-muted);
 }
 
+.dili-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dili-quick-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-base);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dili-quick-btn:hover {
+  background: var(--color-bg-muted);
+}
+
+.dili-quick-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Small screens: the sidebar becomes a bar at the top */
 @media (max-width: 900px) {
   body.dili-has-sidebar {
@@ -293,6 +361,7 @@ body.dili-has-sidebar {
   }
 
   .dili-nav-label,
+  .dili-quick,
   .dili-pc {
     display: none;
   }
