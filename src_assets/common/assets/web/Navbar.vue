@@ -1,91 +1,70 @@
 <template>
   <div>
-    <nav class="navbar navbar-expand-lg navbar-sunshine">
-      <div class="container-fluid">
-        <RouterLink class="navbar-brand" to="/" title="Dili">
-          <DiliLogo></DiliLogo>
+    <nav class="dili-sidebar" aria-label="Main">
+      <RouterLink class="dili-brand" to="/" title="Dili">
+        <DiliLogo></DiliLogo>
+      </RouterLink>
+
+      <div class="dili-nav">
+        <RouterLink class="dili-nav-item" to="/" exact-active-class="active" active-class="">
+          <Home :size="20"></Home><span>{{ $t('navbar.home') }}</span>
         </RouterLink>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent"
-                aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarSupportedContent">
-          <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-            <li class="nav-item">
-              <RouterLink class="nav-link" to="/">
-                <Home :size="18" class="icon"></Home>
-                {{ $t('navbar.home') }}
-              </RouterLink>
-            </li>
-            <li class="nav-item">
-              <RouterLink class="nav-link" to="/devices">
-                <Lock :size="18" class="icon"></Lock>
-                {{ $t('navbar.devices') }}
-              </RouterLink>
-            </li>
-            <li class="nav-item">
-              <RouterLink class="nav-link" to="/displays">
-                <Monitor :size="18" class="icon"></Monitor>
-                {{ $t('navbar.displays') }}
-              </RouterLink>
-            </li>
-            <li class="nav-item">
-              <RouterLink class="nav-link" to="/quality">
-                <Gauge :size="18" class="icon"></Gauge>
-                {{ $t('navbar.quality') }}
-              </RouterLink>
-            </li>
-            <li class="nav-item">
-              <RouterLink class="nav-link" to="/apps">
-                <Layers :size="18" class="icon"></Layers>
-                {{ $t('navbar.applications') }}
-              </RouterLink>
-            </li>
-            <li class="nav-item">
-              <RouterLink class="nav-link" to="/featured">
-                <Star :size="18" class="icon"></Star>
-                {{ $t('navbar.featured') }}
-              </RouterLink>
-            </li>
-            <li class="nav-item">
-              <RouterLink class="nav-link" to="/config">
-                <Settings :size="18" class="icon"></Settings>
-                {{ $t('navbar.configuration') }}
-              </RouterLink>
-            </li>
-            <li class="nav-item">
-              <RouterLink class="nav-link" to="/troubleshooting">
-                <Info :size="18" class="icon"></Info>
-                {{ $t('navbar.troubleshoot') }}
-              </RouterLink>
-            </li>
-          </ul>
-          <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
-            <li class="nav-item">
-              <ThemeToggle/>
-            </li>
-            <li class="nav-item dropdown">
-              <button class="nav-link dropdown-toggle" type="button" id="navbarUserMenu"
-                      data-bs-toggle="dropdown" aria-expanded="false" aria-label="User menu" title="User menu">
-                <CircleUserRound :size="18" class="icon"></CircleUserRound>
-              </button>
-              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarUserMenu">
-                <li>
-                  <RouterLink class="dropdown-item d-flex align-items-center" to="/password">
-                    <Shield :size="18" class="icon"></Shield>
-                    {{ $t('navbar.password') }}
-                  </RouterLink>
-                </li>
-                <li><hr class="dropdown-divider"></li>
-                <li>
-                  <button type="button" class="dropdown-item d-flex align-items-center" @click="logout">
-                    <LogOut :size="18" class="icon"></LogOut>
-                    {{ $t('navbar.logout') }}
-                  </button>
-                </li>
-              </ul>
-            </li>
-          </ul>
+        <RouterLink class="dili-nav-item" to="/displays" active-class="active">
+          <Monitor :size="20"></Monitor><span>{{ $t('navbar.displays') }}</span>
+        </RouterLink>
+        <RouterLink class="dili-nav-item" to="/quality" active-class="active">
+          <Gauge :size="20"></Gauge><span>{{ $t('navbar.quality') }}</span>
+        </RouterLink>
+        <RouterLink class="dili-nav-item" to="/devices" active-class="active">
+          <MonitorSmartphone :size="20"></MonitorSmartphone><span>{{ $t('navbar.devices') }}</span>
+        </RouterLink>
+
+        <div class="dili-nav-label">More</div>
+        <RouterLink class="dili-nav-item" to="/apps" active-class="active">
+          <Layers :size="20"></Layers><span>{{ $t('navbar.applications') }}</span>
+        </RouterLink>
+        <RouterLink class="dili-nav-item" to="/featured" active-class="active">
+          <Star :size="20"></Star><span>{{ $t('navbar.featured') }}</span>
+        </RouterLink>
+        <RouterLink class="dili-nav-item" to="/config" active-class="active">
+          <Settings :size="20"></Settings><span>{{ $t('navbar.configuration') }}</span>
+        </RouterLink>
+        <RouterLink class="dili-nav-item" to="/troubleshooting" active-class="active">
+          <Info :size="20"></Info><span>{{ $t('navbar.troubleshoot') }}</span>
+        </RouterLink>
+      </div>
+
+      <div class="dili-sidebar-bottom">
+        <div class="dili-pc">
+          <div class="dili-pc-name">{{ hostName || 'This PC' }}</div>
+          <div class="dili-pc-state">
+            <span class="dili-dot" :class="{ live: streaming }"></span>
+            {{ streaming ? 'Streaming' : 'Ready' }}
+          </div>
+        </div>
+        <div class="dili-sidebar-tools">
+          <ThemeToggle/>
+          <div class="dropdown">
+            <button class="dili-tool dropdown-toggle" type="button" id="navbarUserMenu"
+                    data-bs-toggle="dropdown" aria-expanded="false" aria-label="User menu" title="User menu">
+              <CircleUserRound :size="20"></CircleUserRound>
+            </button>
+            <ul class="dropdown-menu" aria-labelledby="navbarUserMenu">
+              <li>
+                <RouterLink class="dropdown-item d-flex align-items-center" to="/password">
+                  <Shield :size="18" class="icon me-2"></Shield>
+                  {{ $t('navbar.password') }}
+                </RouterLink>
+              </li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <button type="button" class="dropdown-item d-flex align-items-center" @click="logout">
+                  <LogOut :size="18" class="icon me-2"></LogOut>
+                  {{ $t('navbar.logout') }}
+                </button>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
     </nav>
@@ -94,7 +73,7 @@
 </template>
 
 <script>
-import { CircleUserRound, Gauge, Home, Info, Layers, Lock, LogOut, Monitor, Settings, Shield, Star } from '@lucide/vue'
+import { CircleUserRound, Gauge, Home, Info, Layers, LogOut, Monitor, MonitorSmartphone, Settings, Shield, Star } from '@lucide/vue'
 import ThemeToggle from './ThemeToggle.vue'
 import DiliLogo from './DiliLogo.vue'
 import Notification from './Notification.vue'
@@ -105,7 +84,6 @@ export default {
     ThemeToggle,
     Notification,
     Home,
-    Lock,
     Layers,
     Star,
     Settings,
@@ -114,9 +92,35 @@ export default {
     CircleUserRound,
     LogOut,
     Monitor,
+    MonitorSmartphone,
     Gauge
   },
+  data() {
+    return {
+      hostName: '',
+      streaming: false,
+      timer: null,
+    }
+  },
+  mounted() {
+    document.body.classList.add('dili-has-sidebar')
+    this.refresh()
+    this.timer = setInterval(this.refresh, 5000)
+  },
+  beforeUnmount() {
+    document.body.classList.remove('dili-has-sidebar')
+    clearInterval(this.timer)
+  },
   methods: {
+    async refresh() {
+      try {
+        const s = await fetch('./api/status').then((r) => r.json())
+        this.hostName = s.host_name || ''
+        this.streaming = (s.sessions || 0) > 0
+      } catch (e) {
+        // The status is only a nice extra, ignore errors
+      }
+    },
     logout() {
       const cacheBuster = Date.now().toString()
       const logoutPageUrl = new URL('/logout', globalThis.location.href)
@@ -138,8 +142,168 @@ export default {
 </script>
 
 <style>
-/* Navbar toggler icon for dark text on light background */
-.navbar-sunshine .navbar-toggler-icon {
-  --bs-navbar-toggler-icon-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.9%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") !important;
+/* Make room for the sidebar on every page that shows it */
+body.dili-has-sidebar {
+  padding-left: 248px;
+}
+
+.dili-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 248px;
+  box-sizing: border-box;
+  padding: 24px 14px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: var(--color-bg-subtle);
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+  z-index: 1030;
+}
+
+.dili-brand {
+  padding: 0 10px;
+  text-decoration: none;
+}
+
+.dili-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dili-nav-label {
+  margin: 14px 14px 4px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.dili-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  color: var(--color-text-base);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.dili-nav-item:hover {
+  background: var(--color-bg-muted);
+  color: var(--color-text-base);
+}
+
+.dili-nav-item.active,
+.dili-nav-item.active:hover {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 600;
+}
+
+.dili-sidebar-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dili-pc {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.dili-pc-name {
+  font-weight: 600;
+  color: var(--color-text-base);
+}
+
+.dili-pc-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted);
+}
+
+.dili-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-success);
+}
+
+.dili-dot.live {
+  background: var(--color-primary);
+}
+
+.dili-sidebar-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+}
+
+.dili-sidebar-tools .nav-link,
+.dili-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-base);
+}
+
+.dili-sidebar-tools .nav-link:hover,
+.dili-tool:hover {
+  background: var(--color-bg-muted);
+}
+
+/* Small screens: the sidebar becomes a bar at the top */
+@media (max-width: 900px) {
+  body.dili-has-sidebar {
+    padding-left: 0;
+  }
+
+  .dili-sidebar {
+    position: static;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .dili-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .dili-nav-label,
+  .dili-pc {
+    display: none;
+  }
+
+  .dili-sidebar-bottom {
+    margin-top: 0;
+    margin-left: auto;
+  }
 }
 </style>

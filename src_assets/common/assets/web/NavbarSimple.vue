@@ -2,7 +2,7 @@
   <nav class="navbar navbar-sunshine">
     <div class="container-fluid">
       <span class="navbar-brand" title="Dili">
-        <DiliLogo></DiliLogo>
+        <DiliLogo on-dark></DiliLogo>
       </span>
       <ThemeToggle/>
     </div>
