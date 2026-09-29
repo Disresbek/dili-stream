@@ -18,18 +18,19 @@
         <RouterLink class="dili-nav-item" to="/devices" active-class="active">
           <MonitorSmartphone :size="20"></MonitorSmartphone><span>{{ $t('navbar.devices') }}</span>
         </RouterLink>
-
-        <div class="dili-nav-label">More</div>
-        <RouterLink class="dili-nav-item" to="/featured" active-class="active">
-          <Star :size="20"></Star><span>{{ $t('navbar.featured') }}</span>
-        </RouterLink>
         <RouterLink class="dili-nav-item" to="/config" active-class="active">
           <Settings :size="20"></Settings><span>{{ $t('navbar.configuration') }}</span>
         </RouterLink>
 
+
       </div>
 
       <div class="dili-sidebar-bottom">
+        <div class="dili-nav">
+          <RouterLink class="dili-nav-item" to="/featured" active-class="active">
+            <Star :size="20"></Star><span>{{ $t('navbar.featured') }}</span>
+          </RouterLink>
+        </div>
         <div class="dili-pc">
           <div class="dili-pc-name">{{ hostName || 'This PC' }}</div>
           <div class="dili-pc-state">

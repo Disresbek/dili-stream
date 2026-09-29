@@ -38,12 +38,12 @@
               <img v-if="app.icon" :src="app.icon + '?size=128'" :alt="''" @error="$event.target.style.display = 'none'">
             </div>
             <div class="dili-tile-text">
-              <div class="dili-tile-name">
-                {{ app.name }}
-                <span v-if="app.official" class="dili-official">Official</span>
-              </div>
+              <div class="dili-tile-name">{{ app.name }}</div>
               <div class="dili-tile-tagline">{{ app.tagline || app.description }}</div>
-              <div class="dili-tile-platforms">{{ (app.platforms || []).map(platformName).join(' · ') }}</div>
+              <div class="dili-tile-platforms">
+                <span v-if="app.official" class="dili-official dili-official-inline">Official</span>
+                {{ (app.platforms || []).map(platformName).join(' · ') }}
+              </div>
             </div>
             <a v-if="primaryLink(app)" :href="primaryLink(app)" target="_blank" rel="noopener noreferrer"
                class="dili-get" @click.stop>Get</a>
@@ -318,10 +318,13 @@
   .dili-app-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-auto-rows: 1fr;  /* every card has the same height */
     gap: 12px;
   }
 
   .dili-tile {
+    height: 100%;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: 14px;
@@ -371,6 +374,10 @@
   .dili-tile-name {
     font-size: 15px;
     font-weight: 700;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   .dili-tile-tagline {
@@ -385,6 +392,9 @@
   .dili-tile-platforms {
     font-size: 12px;
     color: var(--color-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .dili-official {
@@ -396,6 +406,11 @@
     color: var(--color-on-primary);
     background: var(--color-primary);
     vertical-align: middle;
+  }
+
+  .dili-official-inline {
+    margin-left: 0;
+    margin-right: 4px;
   }
 
   .dili-get {
