@@ -1094,6 +1094,32 @@ supported on the current platform.
     </tr>
 </table>
 
+### virtual_display_primary
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            When streaming to a virtual screen (`output_name = virtual`), make the virtual screen the main screen
+            for the duration of the stream, so the taskbar and new windows appear on the streamed screen.
+            The previous main screen is restored when the stream ends.
+            @note{This option is only supported on Linux with KDE Plasma.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            disabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            virtual_display_primary = enabled
+            @endcode</td>
+    </tr>
+</table>
+
 ### dd_configuration_option
 
 <table>
