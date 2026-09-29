@@ -27,27 +27,29 @@
           <Settings :size="20"></Settings><span>{{ $t('navbar.configuration') }}</span>
         </RouterLink>
 
-        <div class="dili-nav-label">System</div>
-        <button type="button" class="dili-nav-item" :disabled="restarting" @click="restartDili">
-          <RotateCw :size="20"></RotateCw><span>{{ restarting ? 'Restarting…' : 'Restart Dili' }}</span>
-        </button>
-        <button type="button" class="dili-nav-item" :disabled="!runningApp" @click="closeApp"
-                :title="runningApp ? 'Close ' + runningApp : 'No app is running'">
-          <CircleX :size="20"></CircleX>
-          <span class="dili-nav-two-lines">
-            Force Close App
-            <small>{{ runningApp || 'No app is running' }}</small>
-          </span>
-        </button>
-        <RouterLink class="dili-nav-item" to="/password" active-class="active">
-          <Shield :size="20"></Shield><span>{{ $t('navbar.password') }}</span>
-        </RouterLink>
-        <button type="button" class="dili-nav-item" @click="logout">
-          <LogOut :size="20"></LogOut><span>{{ $t('navbar.logout') }}</span>
-        </button>
       </div>
 
       <div class="dili-sidebar-bottom">
+        <div class="dili-nav dili-nav-system">
+          <div class="dili-nav-label">System</div>
+          <button type="button" class="dili-nav-item" :disabled="restarting" @click="restartDili">
+            <RotateCw :size="20"></RotateCw><span>{{ restarting ? 'Restarting…' : 'Restart Dili' }}</span>
+          </button>
+          <button type="button" class="dili-nav-item" :disabled="!runningApp" @click="closeApp"
+                  :title="runningApp ? 'Close ' + runningApp : 'No app is running'">
+            <CircleX :size="20"></CircleX>
+            <span class="dili-nav-two-lines">
+              Force Close App
+              <small>{{ runningApp || 'No app is running' }}</small>
+            </span>
+          </button>
+          <RouterLink class="dili-nav-item" to="/password" active-class="active">
+            <Shield :size="20"></Shield><span>{{ $t('navbar.password') }}</span>
+          </RouterLink>
+          <button type="button" class="dili-nav-item" @click="logout">
+            <LogOut :size="20"></LogOut><span>{{ $t('navbar.logout') }}</span>
+          </button>
+        </div>
         <div class="dili-pc">
           <div class="dili-pc-name">{{ hostName || 'This PC' }}</div>
           <div class="dili-pc-state">
@@ -318,6 +320,10 @@ button.dili-nav-item:disabled:hover {
 .dili-nav-two-lines small {
   font-size: 12px;
   color: var(--color-text-muted);
+}
+
+.dili-nav-system .dili-nav-label {
+  margin-top: 0;
 }
 
 /* Small screens: the sidebar becomes a bar at the top */
