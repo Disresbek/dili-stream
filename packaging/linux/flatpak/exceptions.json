@@ -2,6 +2,7 @@
   "io.github.disresbek.Dili": [
     "external-gitmodule-url-found",
     "finish-args-flatpak-spawn-access",
-    "finish-args-home-filesystem-access"
+    "finish-args-home-filesystem-access",
+    "appid-url-not-reachable"
   ]
 }
