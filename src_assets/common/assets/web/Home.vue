@@ -182,7 +182,7 @@
         autostart: { supported: false, enabled: false },
         autostartBusy: false,
         autostartError: false,
-        logsOpen: false,
+        logsOpen: true,
         logFilter: '',
         logProblemsOnly: false,
         logsCopied: false,
@@ -223,6 +223,8 @@
       }
       this.refresh();
       this.timer = setInterval(this.refresh, 3000);
+      this.loadLogs();
+      this.logTimer = setInterval(() => { if (this.logsOpen) this.loadLogs(true); }, 5000);
       try {
         const config = await fetch('./api/config').then((r) => r.json());
         this.version = config.version || '';
@@ -242,6 +244,7 @@
     },
     beforeUnmount() {
       clearInterval(this.timer);
+      clearInterval(this.logTimer);
     },
     methods: {
       async refresh() {
@@ -251,15 +254,17 @@
           console.error(e);
         }
       },
-      async loadLogs() {
+      async loadLogs(background = false) {
+        const box = this.$refs.logBox;
+        const atBottom = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 40;
         try {
           this.logs = await fetch('./api/logs').then((r) => r.text());
         } catch (e) {
           console.error(e);
         }
         this.$nextTick(() => {
-          const box = this.$refs.logBox;
-          if (box) box.scrollTop = box.scrollHeight;
+          const el = this.$refs.logBox;
+          if (el && (!background || atBottom)) el.scrollTop = el.scrollHeight;
         });
       },
       async openLogs() {

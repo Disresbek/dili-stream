@@ -30,26 +30,6 @@
       </div>
 
       <div class="dili-sidebar-bottom">
-        <div class="dili-nav dili-nav-system">
-          <div class="dili-nav-label">System</div>
-          <button type="button" class="dili-nav-item" :disabled="restarting" @click="restartDili">
-            <RotateCw :size="20"></RotateCw><span>{{ restarting ? 'Restarting…' : 'Restart Dili' }}</span>
-          </button>
-          <button type="button" class="dili-nav-item" :disabled="!runningApp" @click="closeApp"
-                  :title="runningApp ? 'Close ' + runningApp : 'No app is running'">
-            <CircleX :size="20"></CircleX>
-            <span class="dili-nav-two-lines">
-              Force Close App
-              <small>{{ runningApp || 'No app is running' }}</small>
-            </span>
-          </button>
-          <RouterLink class="dili-nav-item" to="/password" active-class="active">
-            <Shield :size="20"></Shield><span>{{ $t('navbar.password') }}</span>
-          </RouterLink>
-          <button type="button" class="dili-nav-item" @click="logout">
-            <LogOut :size="20"></LogOut><span>{{ $t('navbar.logout') }}</span>
-          </button>
-        </div>
         <div class="dili-pc">
           <div class="dili-pc-name">{{ hostName || 'This PC' }}</div>
           <div class="dili-pc-state">
@@ -58,6 +38,39 @@
           </div>
         </div>
         <DiliThemeSwitch></DiliThemeSwitch>
+
+        <!-- System menu: opens a panel next to the sidebar -->
+        <button type="button" class="dili-system-btn" :aria-expanded="systemOpen ? 'true' : 'false'" @click.stop="toggleSystem">
+          <Power :size="16"></Power>
+          <span>System</span>
+          <ChevronRight :size="16" class="dili-system-chevron"></ChevronRight>
+        </button>
+        <div v-if="systemOpen" class="dili-system-panel" role="menu" aria-label="System" @click.stop>
+          <button type="button" role="menuitem" class="dili-system-item" :disabled="restarting" @click="restartDili">
+            <RotateCw :size="18"></RotateCw>
+            <span>{{ restarting ? 'Restarting…' : 'Restart Dili' }}</span>
+          </button>
+          <button type="button" role="menuitem" class="dili-system-item" @click="quitDili">
+            <Power :size="18"></Power>
+            <span>Quit Dili</span>
+          </button>
+          <button type="button" role="menuitem" class="dili-system-item" :disabled="!runningApp" @click="closeApp">
+            <CircleX :size="18"></CircleX>
+            <span class="dili-nav-two-lines">
+              Force Close App
+              <small>{{ runningApp || 'No app is running' }}</small>
+            </span>
+          </button>
+          <div class="dili-system-divider"></div>
+          <RouterLink role="menuitem" class="dili-system-item" to="/password" @click="systemOpen = false">
+            <Shield :size="18"></Shield>
+            <span>{{ $t('navbar.password') }}</span>
+          </RouterLink>
+          <button type="button" role="menuitem" class="dili-system-item" @click="logout">
+            <LogOut :size="18"></LogOut>
+            <span>{{ $t('navbar.logout') }}</span>
+          </button>
+        </div>
       </div>
     </nav>
     <Notification></Notification>
@@ -65,7 +78,7 @@
 </template>
 
 <script>
-import { CircleUserRound, CircleX, Home, RotateCw, Info, Layers, LogOut, Monitor, MonitorSmartphone, Settings, Shield, Star } from '@lucide/vue'
+import { ChevronRight, CircleUserRound, CircleX, Home, Power, RotateCw, Info, Layers, LogOut, Monitor, MonitorSmartphone, Settings, Shield, Star } from '@lucide/vue'
 import DiliThemeSwitch from './DiliThemeSwitch.vue'
 import DiliLogo from './DiliLogo.vue'
 import { apiFetch } from './fetch_utils'
@@ -87,7 +100,9 @@ export default {
     Monitor,
     MonitorSmartphone,
     CircleX,
-    RotateCw
+    RotateCw,
+    ChevronRight,
+    Power
   },
   data() {
     return {
@@ -95,15 +110,22 @@ export default {
       streaming: false,
       runningApp: '',
       restarting: false,
+      systemOpen: false,
       timer: null,
     }
   },
   mounted() {
+    this.closeSystem = () => { this.systemOpen = false }
+    this.onKey = (e) => { if (e.key === 'Escape') this.systemOpen = false }
+    document.addEventListener('click', this.closeSystem)
+    document.addEventListener('keydown', this.onKey)
     document.body.classList.add('dili-has-sidebar')
     this.refresh()
     this.timer = setInterval(this.refresh, 5000)
   },
   beforeUnmount() {
+    document.removeEventListener('click', this.closeSystem)
+    document.removeEventListener('keydown', this.onKey)
     document.body.classList.remove('dili-has-sidebar')
     clearInterval(this.timer)
   },
@@ -123,6 +145,17 @@ export default {
       if (!window.confirm(`Force close ${this.runningApp}? The stream on your device ends.`)) return
       await apiFetch('./api/apps/close', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
       setTimeout(this.refresh, 1500)
+    },
+    toggleSystem() {
+      const open = !this.systemOpen
+      // Close other floating panels (like "More themes") first
+      document.dispatchEvent(new MouseEvent('click'))
+      this.systemOpen = open
+    },
+    quitDili() {
+      if (!window.confirm('Quit Dili? Any running stream ends, and your devices cannot connect until Dili is started again. It starts by itself the next time you log in, if autostart is on.')) return
+      apiFetch('./api/quit', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      this.systemOpen = false
     },
     restartDili() {
       if (!window.confirm('Restart Dili? Any running stream ends, and Dili is back after a few seconds.')) return
@@ -324,6 +357,93 @@ button.dili-nav-item:disabled:hover {
 
 .dili-nav-system .dili-nav-label {
   margin-top: 0;
+}
+
+.dili-system-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-base);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dili-system-btn:hover,
+.dili-system-btn[aria-expanded="true"] {
+  background: var(--color-bg-muted);
+}
+
+.dili-system-chevron {
+  margin-left: auto;
+  color: var(--color-text-muted);
+}
+
+/* Fixed position, so the sidebar can never cut it off */
+.dili-system-panel {
+  position: fixed;
+  left: 284px;
+  bottom: 16px;
+  z-index: 2000;
+  width: 260px;
+  padding: 8px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.dili-system-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-base);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.dili-system-item:hover {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-base);
+}
+
+.dili-system-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dili-system-item:disabled:hover {
+  background: transparent;
+}
+
+.dili-system-divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--color-border);
+}
+
+@media (max-width: 900px) {
+  .dili-system-panel {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
 }
 
 /* Small screens: the sidebar becomes a bar at the top */

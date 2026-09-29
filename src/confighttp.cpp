@@ -44,6 +44,7 @@
 // local includes
 #include "config.h"
 #include "confighttp.h"
+#include "entry_handler.h"
 #include "crypto.h"
 #include "display_device.h"
 #include "file_handler.h"
@@ -2355,6 +2356,33 @@ namespace confighttp {
   }
 
   /**
+   * @brief Quit Dili completely (the "Quit Dili" menu item).
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/quit|:| POST|:| null}
+   */
+  void quit(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    std::string client_id = get_client_id(request);
+    if (!validate_csrf_token(response, request, client_id)) {
+      return;
+    }
+
+    print_req(request);
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+
+    BOOST_LOG(info) << "Quitting on request from the web UI"sv;
+    lifetime::exit_sunshine(0, true);
+  }
+
+  /**
    * @brief Build Virtual HID Broker version and installation status.
    *
    * @return Virtual HID Broker status JSON.
@@ -2783,6 +2811,7 @@ namespace confighttp {
     server.resource["^/api/reset-display-device-persistence$"]["POST"] = resetDisplayDevicePersistence;
     server.resource["^/api/reset-portal-token$"]["POST"] = resetPortalToken;
     server.resource["^/api/restart$"]["POST"] = restart;
+    server.resource["^/api/quit$"]["POST"] = quit;
     server.resource["^/api/virtual-input/license$"]["GET"] = getVirtualInputLicense;
     server.resource["^/api/virtual-input/license$"]["POST"] = updateVirtualInputLicense;
     server.resource["^/api/virtual-input/status$"]["GET"] = getVirtualInputStatus;

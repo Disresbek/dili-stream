@@ -19,7 +19,7 @@
     </div>
 
     <!-- All other themes, in their own panel next to the sidebar -->
-    <button type="button" class="dili-more-themes" :class="{ active: isExtra }" :aria-expanded="open ? 'true' : 'false'" @click.stop="open = !open">
+    <button type="button" class="dili-more-themes" :class="{ active: isExtra }" :aria-expanded="open ? 'true' : 'false'" @click.stop="togglePanel">
       <Palette :size="16"></Palette>
       <span>{{ isExtra ? currentLabel : 'More themes' }}</span>
       <ChevronRight :size="16" class="dili-more-chevron"></ChevronRight>
@@ -108,6 +108,12 @@
       choose(value) {
         this.theme = value;
         chooseTheme(value);
+      },
+      togglePanel() {
+        const next = !this.open;
+        // Close other floating panels (like the System menu) first
+        document.dispatchEvent(new MouseEvent('click'));
+        this.open = next;
       },
       close() {
         this.open = false;
