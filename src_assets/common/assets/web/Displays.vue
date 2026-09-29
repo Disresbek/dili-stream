@@ -95,6 +95,34 @@
           <div class="dili-divider"></div>
           <div class="dili-row">
             <div>
+              <div class="dili-row-title">Turn off my monitors</div>
+              <div class="dili-row-text" v-if="monitors.available && monitors.monitors.length">
+                Your monitors switch off when a stream starts, and back on when it ends.
+                Found: {{ monitors.monitors.map((m) => m.model || 'Monitor ' + m.number).join(', ') }}.
+              </div>
+              <div class="dili-row-text" v-else-if="monitors.available">
+                None of your monitors can be switched off by Dili. They need "DDC/CI" turned on in their own menu.
+              </div>
+              <div class="dili-row-text" v-else-if="monitorsLoaded">
+                This needs the small tool "ddcutil", which is not installed on this PC.
+              </div>
+              <div class="dili-row-text" v-else>Checking your monitors…</div>
+            </div>
+            <button
+              type="button"
+              class="dili-switch"
+              :class="{ on: monitorsOffOn }"
+              :aria-pressed="monitorsOffOn ? 'true' : 'false'"
+              aria-label="Turn off my monitors"
+              :disabled="!monitorsOffOn && !(monitors.available && monitors.monitors.length)"
+              @click="toggleMonitorsOff"
+            >
+              <span></span>
+            </button>
+          </div>
+          <div class="dili-divider"></div>
+          <div class="dili-row">
+            <div>
               <div class="dili-row-title">Matches each device automatically</div>
               <div class="dili-row-text">
                 Resolution and refresh rate follow the device, for example 4K at 60 Hz on a TV or 120 Hz on a phone.
@@ -120,6 +148,11 @@
   import { apiFetch } from './fetch_utils'
   import { CircleCheck, Circle as CircleIcon } from '@lucide/vue'
 
+  // Dili's "turn off my monitors" commands use the monitor's own power control (DDC/CI, VCP code D6)
+  function isMonitorOff(p) {
+    return /ddcutil --display \d+ setvcp D6 04/.test((p && p.do) || '');
+  }
+
   export default {
     components: {
       Navbar,
@@ -128,6 +161,8 @@
     },
     data() {
       return {
+        monitors: { available: false, monitors: [] },
+        monitorsLoaded: false,
         loading: true,
         displays: [],
         virtualSupported: false,
@@ -138,6 +173,17 @@
       };
     },
     computed: {
+      prepList() {
+        try {
+          const list = JSON.parse(this.config.global_prep_cmd || '[]');
+          return Array.isArray(list) ? list : [];
+        } catch (e) {
+          return [];
+        }
+      },
+      monitorsOffOn() {
+        return this.prepList.some((p) => isMonitorOff(p));
+      },
       physicalDisplays() {
         return this.displays.filter((d) => !d.virtual);
       },
@@ -148,6 +194,15 @@
         const v = String(this.config.virtual_display_primary || '').toLowerCase();
         return v === 'enabled' || v === 'true' || v === 'on' || v === 'yes' || v === '1';
       },
+    },
+    async mounted() {
+      try {
+        this.monitors = await fetch('./api/monitors').then((r) => r.json());
+      } catch (e) {
+        this.monitors = { available: false, monitors: [] };
+      } finally {
+        this.monitorsLoaded = true;
+      }
     },
     async created() {
       try {
@@ -166,6 +221,21 @@
       }
     },
     methods: {
+      toggleMonitorsOff() {
+        // Dili's own entries in the commands that run for every app
+        let list = this.prepList.filter((p) => !isMonitorOff(p));
+        if (!this.monitorsOffOn) {
+          const own = this.monitors.monitors.map((m) => ({
+            // "|| true": a monitor that does not answer must never stop the stream from starting
+            do: `sh -c "ddcutil --display ${m.number} setvcp D6 04 || true"`,
+            undo: `sh -c "ddcutil --display ${m.number} setvcp D6 01 || true"`,
+          }));
+          list = [...list, ...own];
+        }
+        this.config.global_prep_cmd = JSON.stringify(list);
+        this.dirty = true;
+        this.saved = false;
+      },
       select(name) {
         if (this.config.output_name === name) {
           return;

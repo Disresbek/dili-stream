@@ -76,6 +76,7 @@ namespace platf {
   std::string host_command_prefix();
   nlohmann::json installed_apps();
   nlohmann::json test_app_command(const std::string &command);
+  nlohmann::json ddc_monitors();
 }  // namespace platf
 #endif
 
@@ -1560,6 +1561,29 @@ namespace confighttp {
   }
 
   /**
+   * @brief Get the monitors that Dili can switch off while streaming.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/monitors|:| GET|:| null}
+   */
+  void getMonitors(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+#ifdef SUNSHINE_BUILD_PORTAL
+    nlohmann::json output_tree = platf::ddc_monitors();
+#else
+    nlohmann::json output_tree {{"available", false}, {"monitors", nlohmann::json::array()}};
+#endif
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
    * @brief Get the streaming status for the Home page.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2728,6 +2752,7 @@ namespace confighttp {
     server.resource["^/api/apps/close$"]["POST"] = closeApp;
     server.resource["^/api/apps/test$"]["POST"] = testAppCommand;
     server.resource["^/api/installed$"]["GET"] = getInstalled;
+    server.resource["^/api/monitors$"]["GET"] = getMonitors;
     server.resource["^/api/clients/list$"]["GET"] = getClients;
     server.resource["^/api/clients/unpair$"]["POST"] = unpair;
     server.resource["^/api/clients/unpair-all$"]["POST"] = unpairAll;

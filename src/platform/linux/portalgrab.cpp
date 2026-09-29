@@ -9,6 +9,7 @@
 
 // standard includes
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <optional>
@@ -2047,6 +2048,59 @@ echo done
     // Start it detached on the PC, so this request does not wait for the program
     portal::virtual_display::run_host("setsid -f " + command + " >/dev/null 2>&1 </dev/null");
     out["started"] = true;
+    return out;
+  }
+
+  /**
+   * @brief Monitors that can be switched off through their own power control (DDC/CI).
+   *
+   * Uses ddcutil on the PC. Each entry has the ddcutil display number and the monitor model.
+   *
+   * @return JSON object: available (ddcutil installed), monitors [{number, model}].
+   */
+  nlohmann::json ddc_monitors() {
+    using portal::virtual_display::run_host;
+    nlohmann::json out;
+    out["monitors"] = nlohmann::json::array();
+    out["available"] = !run_host("sh -c 'command -v ddcutil'").empty();
+    if (!out["available"].get<bool>()) {
+      return out;
+    }
+
+    const auto listing = run_host("ddcutil detect --brief");
+    static const std::regex display_re(R"(^Display (\d+)\s*$)");
+    static const std::regex monitor_re(R"(^\s*Monitor:\s*(.*)$)");
+    nlohmann::json current;
+    std::istringstream lines(listing);
+    for (std::string line; std::getline(lines, line);) {
+      std::smatch m;
+      if (std::regex_match(line, m, display_re)) {
+        if (!current.is_null()) {
+          out["monitors"].push_back(current);
+        }
+        current = nlohmann::json::object();
+        current["number"] = std::stoi(m[1].str());
+        current["model"] = "";
+      } else if (!line.empty() && !std::isspace(static_cast<unsigned char>(line.front()))) {
+        // "Invalid display" or another block starts
+        if (!current.is_null()) {
+          out["monitors"].push_back(current);
+        }
+        current = nullptr;
+      } else if (!current.is_null() && std::regex_match(line, m, monitor_re)) {
+        // "AOC:Q27B35S3:1234" -> "AOC Q27B35S3"
+        auto model = m[1].str();
+        const auto first = model.find(':');
+        const auto second = first == std::string::npos ? std::string::npos : model.find(':', first + 1);
+        if (first != std::string::npos) {
+          model = model.substr(0, first) + " " + model.substr(first + 1, second == std::string::npos ? std::string::npos : second - first - 1);
+        }
+        current["model"] = model;
+      }
+    }
+    if (!current.is_null()) {
+      out["monitors"].push_back(current);
+    }
     return out;
   }
 
