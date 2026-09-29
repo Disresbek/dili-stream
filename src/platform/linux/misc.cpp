@@ -454,6 +454,10 @@ namespace platf {
    * @return The command to actually run.
    */
   static std::string dili_host_command(const std::string &cmd) {
+    // Tests (and anyone who wants commands to stay inside the sandbox) can switch this off
+    if (const char *off = std::getenv("DILI_NO_HOST_COMMANDS"); off && std::string_view(off) == "1") {
+      return cmd;
+    }
     std::error_code fs_ec;
     std::string prefix;
     if (std::filesystem::exists("/.flatpak-info", fs_ec)) {

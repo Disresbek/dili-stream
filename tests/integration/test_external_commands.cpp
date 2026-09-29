@@ -41,6 +41,9 @@ class ExternalCommandTest: public BaseTest, public ::testing::WithParamInterface
 protected:
   void SetUp() override {
     BaseTest::SetUp();
+    // Dili normally runs app commands on the PC itself when it is inside a Flatpak or distrobox.
+    // These tests check the command runner inside the build sandbox, so keep commands local.
+    setenv("DILI_NO_HOST_COMMANDS", "1", 1);
     if constexpr (IS_WINDOWS) {
       current_platform = "windows";
     } else if constexpr (IS_MACOS) {
