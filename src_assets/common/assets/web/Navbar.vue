@@ -32,16 +32,6 @@
       </div>
 
       <div class="dili-sidebar-bottom">
-        <div class="dili-quick">
-          <button v-if="runningApp" type="button" class="dili-quick-btn" :title="'Close ' + runningApp" @click="confirmOr('close', closeApp)">
-            <CircleX :size="16"></CircleX>
-            <span>{{ confirm === 'close' ? 'Tap again to close' : 'Close ' + runningApp }}</span>
-          </button>
-          <button type="button" class="dili-quick-btn" title="Restart Dili" :disabled="restarting" @click="confirmOr('restart', restartDili)">
-            <RotateCw :size="16"></RotateCw>
-            <span>{{ restarting ? 'Restarting…' : (confirm === 'restart' ? 'Tap again to restart' : 'Restart Dili') }}</span>
-          </button>
-        </div>
         <div class="dili-pc">
           <div class="dili-pc-name">{{ hostName || 'This PC' }}</div>
           <div class="dili-pc-state">
@@ -53,10 +43,27 @@
         <div class="dili-sidebar-tools">
           <div class="dropdown">
             <button class="dili-tool dropdown-toggle" type="button" id="navbarUserMenu"
-                    data-bs-toggle="dropdown" aria-expanded="false" aria-label="User menu" title="User menu">
+                    data-bs-toggle="dropdown" aria-expanded="false" aria-label="Menu" title="Menu">
               <CircleUserRound :size="20"></CircleUserRound>
+              <span>Menu</span>
             </button>
             <ul class="dropdown-menu" aria-labelledby="navbarUserMenu">
+              <li>
+                <button type="button" class="dropdown-item d-flex align-items-center" :disabled="restarting" @click="restartDili">
+                  <RotateCw :size="18" class="icon me-2"></RotateCw>
+                  {{ restarting ? 'Restarting…' : 'Restart Dili' }}
+                </button>
+              </li>
+              <li>
+                <button type="button" class="dropdown-item d-flex align-items-center" :disabled="!runningApp" @click="closeApp">
+                  <CircleX :size="18" class="icon me-2"></CircleX>
+                  <span>
+                    Force Close App
+                    <span class="dili-menu-hint">{{ runningApp ? runningApp : 'No app is running' }}</span>
+                  </span>
+                </button>
+              </li>
+              <li><hr class="dropdown-divider"></li>
               <li>
                 <RouterLink class="dropdown-item d-flex align-items-center" to="/password">
                   <Shield :size="18" class="icon me-2"></Shield>
@@ -109,7 +116,6 @@ export default {
       hostName: '',
       streaming: false,
       runningApp: '',
-      confirm: '',
       restarting: false,
       timer: null,
     }
@@ -134,21 +140,14 @@ export default {
         // The status is only a nice extra, ignore errors
       }
     },
-    // Buttons that interrupt a stream need a second tap
-    confirmOr(action, run) {
-      if (this.confirm === action) {
-        this.confirm = ''
-        run()
-        return
-      }
-      this.confirm = action
-      setTimeout(() => { if (this.confirm === action) this.confirm = '' }, 4000)
-    },
+    // Both actions interrupt a running stream, so ask first
     async closeApp() {
+      if (!window.confirm(`Force close ${this.runningApp}? The stream on your device ends.`)) return
       await apiFetch('./api/apps/close', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
       setTimeout(this.refresh, 1500)
     },
     restartDili() {
+      if (!window.confirm('Restart Dili? Any running stream ends, and Dili is back after a few seconds.')) return
       this.restarting = true
       apiFetch('./api/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
       setTimeout(() => window.location.reload(), 8000)
@@ -305,36 +304,15 @@ body.dili-has-sidebar {
   background: var(--color-bg-muted);
 }
 
-.dili-quick {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dili-quick-btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 38px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--color-text-base);
-  font: inherit;
+.dili-tool span {
   font-size: 14px;
   font-weight: 500;
-  text-align: left;
-  cursor: pointer;
 }
 
-.dili-quick-btn:hover {
-  background: var(--color-bg-muted);
-}
-
-.dili-quick-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+.dili-menu-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--color-text-muted);
 }
 
 /* Small screens: the sidebar becomes a bar at the top */
@@ -361,7 +339,6 @@ body.dili-has-sidebar {
   }
 
   .dili-nav-label,
-  .dili-quick,
   .dili-pc {
     display: none;
   }
