@@ -128,3 +128,15 @@ export function loadAutoTheme() {
         })
     })()
 }
+
+/**
+ * Read and change the theme from Dili's appearance switch.
+ */
+export function currentTheme() {
+    return getStoredTheme() || 'auto'
+}
+
+export function chooseTheme(theme) {
+    setStoredTheme(theme)
+    setTheme(theme)
+}

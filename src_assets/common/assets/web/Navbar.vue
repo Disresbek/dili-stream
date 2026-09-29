@@ -42,8 +42,8 @@
             {{ streaming ? 'Streaming' : 'Ready' }}
           </div>
         </div>
+        <DiliThemeSwitch></DiliThemeSwitch>
         <div class="dili-sidebar-tools">
-          <ThemeToggle/>
           <div class="dropdown">
             <button class="dili-tool dropdown-toggle" type="button" id="navbarUserMenu"
                     data-bs-toggle="dropdown" aria-expanded="false" aria-label="User menu" title="User menu">
@@ -74,14 +74,14 @@
 
 <script>
 import { CircleUserRound, Gauge, Home, Info, Layers, LogOut, Monitor, MonitorSmartphone, Settings, Shield, Star } from '@lucide/vue'
-import ThemeToggle from './ThemeToggle.vue'
+import DiliThemeSwitch from './DiliThemeSwitch.vue'
 import DiliLogo from './DiliLogo.vue'
 import Notification from './Notification.vue'
 
 export default {
   components: {
     DiliLogo,
-    ThemeToggle,
+    DiliThemeSwitch,
     Notification,
     Home,
     Layers,
@@ -144,7 +144,7 @@ export default {
 <style>
 /* Make room for the sidebar on every page that shows it */
 body.dili-has-sidebar {
-  padding-left: 248px;
+  padding-left: 272px;
 }
 
 .dili-sidebar {
@@ -152,7 +152,7 @@ body.dili-has-sidebar {
   top: 0;
   left: 0;
   bottom: 0;
-  width: 248px;
+  width: 272px;
   box-sizing: border-box;
   padding: 24px 14px 16px 14px;
   display: flex;

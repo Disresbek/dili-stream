@@ -4,19 +4,19 @@
       <span class="navbar-brand" title="Dili">
         <DiliLogo on-dark></DiliLogo>
       </span>
-      <ThemeToggle/>
+      <DiliThemeSwitch style="width: 260px"></DiliThemeSwitch>
     </div>
   </nav>
 </template>
 
 <script>
-import ThemeToggle from './ThemeToggle.vue'
+import DiliThemeSwitch from './DiliThemeSwitch.vue'
 import DiliLogo from './DiliLogo.vue'
 
 export default {
   components: {
     DiliLogo,
-    ThemeToggle,
+    DiliThemeSwitch,
   },
 }
 </script>
