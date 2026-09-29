@@ -70,6 +70,33 @@
         Streaming a monitor may ask KDE for screen sharing permission once.
       </p>
 
+      <section id="quality" class="dili-section">
+        <h2>Picture quality</h2>
+        <div class="dili-grid">
+          <button
+            v-for="p in presets"
+            :key="p.id"
+            type="button"
+            class="dili-card dili-card-compact"
+            :class="{ selected: currentPreset === p.id }"
+            :aria-pressed="currentPreset === p.id ? 'true' : 'false'"
+            @click="selectPreset(p.id)"
+          >
+            <div class="dili-card-top">
+              <span class="dili-card-title">{{ p.name }}</span>
+              <CircleCheck v-if="currentPreset === p.id" :size="22" class="dili-check"></CircleCheck>
+              <CircleIcon v-else :size="22" class="dili-uncheck"></CircleIcon>
+            </div>
+            <div class="dili-card-text">{{ p.text }}</div>
+            <div class="dili-card-detail">{{ p.detail }}</div>
+          </button>
+        </div>
+        <p class="dili-muted dili-hint-plain">
+          How sharp the picture is also depends on the bitrate you choose in Moonlight on each device.
+          <RouterLink to="/config">All encoder settings</RouterLink>
+        </p>
+      </section>
+
       <section v-if="isVirtual" class="dili-section">
         <h2>While streaming</h2>
         <div class="dili-panel">
@@ -131,33 +158,6 @@
             <span class="dili-always">Always on</span>
           </div>
         </div>
-      </section>
-
-      <section id="quality" class="dili-section">
-        <h2>Picture quality</h2>
-        <div class="dili-grid">
-          <button
-            v-for="p in presets"
-            :key="p.id"
-            type="button"
-            class="dili-card dili-card-compact"
-            :class="{ selected: currentPreset === p.id }"
-            :aria-pressed="currentPreset === p.id ? 'true' : 'false'"
-            @click="selectPreset(p.id)"
-          >
-            <div class="dili-card-top">
-              <span class="dili-card-title">{{ p.name }}</span>
-              <CircleCheck v-if="currentPreset === p.id" :size="22" class="dili-check"></CircleCheck>
-              <CircleIcon v-else :size="22" class="dili-uncheck"></CircleIcon>
-            </div>
-            <div class="dili-card-text">{{ p.text }}</div>
-            <div class="dili-card-detail">{{ p.detail }}</div>
-          </button>
-        </div>
-        <p class="dili-muted dili-hint-plain">
-          How sharp the picture is also depends on the bitrate you choose in Moonlight on each device.
-          <RouterLink to="/config">All encoder settings</RouterLink>
-        </p>
       </section>
 
       <section class="dili-section">
