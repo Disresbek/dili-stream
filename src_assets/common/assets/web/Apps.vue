@@ -291,6 +291,23 @@
   import { searchCovers, useCover } from './covers'
   import { AppWindow, ArrowUp, ChevronRight, File as FileIcon, Folder, Gamepad2, Plus, Search, X } from '@lucide/vue'
 
+  // Steam games are started through Steam, which hands the game to its "reaper" helper and quits.
+  // To close the game when the stream ends, Dili stops everything Steam launched for this game id.
+  const STEAM_CLOSE_PREFIX = 'pkill -TERM -f AppId=';
+
+  function steamIdOf(command) {
+    const m = /steam:\/\/rungameid\/(\d+)/.exec(command || '');
+    return m ? m[1] : null;
+  }
+
+  function steamCloseCommand(id) {
+    return `${STEAM_CLOSE_PREFIX}${id}[^0-9]`;
+  }
+
+  function isSteamClose(undo) {
+    return (undo || '').startsWith(STEAM_CLOSE_PREFIX);
+  }
+
   export default {
     components: {
       Navbar,
@@ -418,14 +435,16 @@
       makeEditing(index, app, lockName) {
         const detached = app.detached || [];
         const usesCmd = !!app.cmd;
+        const prepAll = app['prep-cmd'] || [];
+        const closesSteamGame = prepAll.some((p) => !p.do && isSteamClose(p.undo));
         return {
           index,
           original: app,
           lockName,
           name: app.name || '',
           command: this.commandOf(app),
-          closeOnEnd: usesCmd || detached.length === 0,
-          prep: (app['prep-cmd'] || []).map((p) => ({ do: p.do || '', undo: p.undo || '' })),
+          closeOnEnd: usesCmd || detached.length === 0 || closesSteamGame,
+          prep: prepAll.filter((p) => !(!p.do && isSteamClose(p.undo))).map((p) => ({ do: p.do || '', undo: p.undo || '' })),
           background: usesCmd ? [...detached] : detached.slice(1),
           workingDir: app['working-dir'] || '',
           autoDetach: app['auto-detach'] !== false,
@@ -456,8 +475,7 @@
       pickInstalled(item) {
         this.editing.name = item.name;
         this.editing.command = item.command;
-        // Steam starts the game and quits right away, so Dili just starts it
-        this.editing.closeOnEnd = item.kind !== 'steam';
+        this.editing.closeOnEnd = true;
         this.picker = null;
         this.testResult = null;
         this.autoPicture();
@@ -525,6 +543,16 @@
           app.detached = command ? [command, ...background] : background;
         }
         app['prep-cmd'] = e.prep.map((p) => ({ do: p.do.trim(), undo: p.undo.trim() })).filter((p) => p.do || p.undo);
+        const steamId = steamIdOf(command);
+        if (steamId) {
+          // Steam quits right after starting the game, so "watching" it does not work.
+          // Start it in the background, and close the game itself when the stream ends.
+          delete app.cmd;
+          app.detached = [command, ...background];
+          if (e.closeOnEnd) {
+            app['prep-cmd'].push({ do: '', undo: steamCloseCommand(steamId) });
+          }
+        }
         if (e.workingDir.trim()) app['working-dir'] = e.workingDir.trim();
         else delete app['working-dir'];
         app['auto-detach'] = e.autoDetach;
