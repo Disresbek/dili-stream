@@ -16,7 +16,7 @@
       <ul class="mb-3">
         <li v-for="v in fatalLogs" :key="`${v.timestamp}-${v.value}`">{{ v.value }}</li>
       </ul>
-      <RouterLink class="btn btn-danger" to="/troubleshooting#logs">View logs</RouterLink>
+      <button type="button" class="btn btn-danger" @click="openLogs">View logs</button>
     </div>
 
     <!-- Status -->
@@ -121,6 +121,33 @@
       </div>
     </section>
 
+    <!-- Logs -->
+    <section id="logs" class="dili-section">
+      <div class="dili-logs-head">
+        <h2>Logs</h2>
+        <button type="button" class="dili-text-link" @click="logsOpen ? (logsOpen = false) : openLogs()">
+          {{ logsOpen ? 'Hide logs' : 'Show logs' }}
+        </button>
+      </div>
+      <p v-if="!logsOpen" class="dili-muted dili-small">
+        What Dili is doing behind the scenes. Useful when something doesn't work, or when someone helps you find a problem.
+      </p>
+      <div v-if="logsOpen" class="dili-panel dili-logs">
+        <div class="dili-logs-bar">
+          <input v-model="logFilter" type="search" class="dili-logs-search" placeholder="Find in logs">
+          <label class="dili-logs-only">
+            <input v-model="logProblemsOnly" type="checkbox">
+            Only problems
+          </label>
+          <button type="button" class="dili-pill dili-pill-outline dili-pill-small" @click="copyLogs">{{ logsCopied ? 'Copied' : 'Copy' }}</button>
+          <button type="button" class="dili-pill dili-pill-outline dili-pill-small" @click="loadLogs">Refresh</button>
+        </div>
+        <pre ref="logBox" class="dili-log-box"><template v-for="(line, i) in visibleLogLines" :key="i"><span :class="lineClass(line)">{{ line }}</span>
+</template></pre>
+        <div class="dili-muted dili-small">{{ visibleLogLines.length }} of {{ logLines.length }} lines</div>
+      </div>
+    </section>
+
     <footer class="dili-footer dili-muted dili-small">
       Dili <template v-if="version">{{ version }}</template> ·
       {{ $t('index.description') }} ·
@@ -155,9 +182,23 @@
         autostart: { supported: false, enabled: false },
         autostartBusy: false,
         autostartError: false,
+        logsOpen: false,
+        logFilter: '',
+        logProblemsOnly: false,
+        logsCopied: false,
       };
     },
     computed: {
+      logLines() {
+        return (this.logs || '').split('\n').filter((l) => l.trim().length);
+      },
+      visibleLogLines() {
+        const q = this.logFilter.trim().toLowerCase();
+        return this.logLines.filter((l) => {
+          if (this.logProblemsOnly && !/(Warning|Error|Fatal):/.test(l)) return false;
+          return !q || l.toLowerCase().includes(q);
+        });
+      },
       fatalLogs() {
         if (!this.logs) return [];
         const regex = /(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}]):\s/g;
@@ -206,6 +247,36 @@
       async refresh() {
         try {
           this.status = await fetch('./api/status').then((r) => r.json());
+        } catch (e) {
+          console.error(e);
+        }
+      },
+      async loadLogs() {
+        try {
+          this.logs = await fetch('./api/logs').then((r) => r.text());
+        } catch (e) {
+          console.error(e);
+        }
+        this.$nextTick(() => {
+          const box = this.$refs.logBox;
+          if (box) box.scrollTop = box.scrollHeight;
+        });
+      },
+      async openLogs() {
+        this.logsOpen = true;
+        await this.loadLogs();
+        this.$nextTick(() => document.getElementById('logs')?.scrollIntoView({ behavior: 'smooth' }));
+      },
+      lineClass(line) {
+        if (/(Error|Fatal):/.test(line)) return 'dili-log-error';
+        if (/Warning:/.test(line)) return 'dili-log-warning';
+        return '';
+      },
+      async copyLogs() {
+        try {
+          await navigator.clipboard.writeText(this.visibleLogLines.join('\n'));
+          this.logsCopied = true;
+          setTimeout(() => (this.logsCopied = false), 2000);
         } catch (e) {
           console.error(e);
         }
@@ -492,4 +563,80 @@
     color: var(--color-text-base);
   }
 
+  .dili-logs-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .dili-text-link {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--color-primary);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .dili-logs {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .dili-logs-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .dili-logs-search {
+    flex: 1 1 220px;
+    height: 36px;
+    padding: 0 12px;
+    border-radius: 10px;
+    background: var(--color-bg-base);
+    color: var(--color-text-base);
+    font: inherit;
+    font-size: 14px;
+  }
+
+  .dili-logs-only {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .dili-pill-small {
+    height: 36px;
+    padding: 0 14px;
+    font-size: 13px;
+  }
+
+  .dili-log-box {
+    max-height: 420px;
+    overflow: auto;
+    margin: 0;
+    padding: 12px;
+    border-radius: 10px;
+    background: var(--color-bg-base);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .dili-log-error {
+    color: var(--color-danger);
+  }
+
+  .dili-log-warning {
+    color: #d49a00;
+  }
 </style>

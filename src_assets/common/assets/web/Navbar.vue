@@ -26,9 +26,25 @@
         <RouterLink class="dili-nav-item" to="/config" active-class="active">
           <Settings :size="20"></Settings><span>{{ $t('navbar.configuration') }}</span>
         </RouterLink>
-        <RouterLink class="dili-nav-item" to="/troubleshooting" active-class="active">
-          <Info :size="20"></Info><span>{{ $t('navbar.troubleshoot') }}</span>
+
+        <div class="dili-nav-label">System</div>
+        <button type="button" class="dili-nav-item" :disabled="restarting" @click="restartDili">
+          <RotateCw :size="20"></RotateCw><span>{{ restarting ? 'Restarting…' : 'Restart Dili' }}</span>
+        </button>
+        <button type="button" class="dili-nav-item" :disabled="!runningApp" @click="closeApp"
+                :title="runningApp ? 'Close ' + runningApp : 'No app is running'">
+          <CircleX :size="20"></CircleX>
+          <span class="dili-nav-two-lines">
+            Force Close App
+            <small>{{ runningApp || 'No app is running' }}</small>
+          </span>
+        </button>
+        <RouterLink class="dili-nav-item" to="/password" active-class="active">
+          <Shield :size="20"></Shield><span>{{ $t('navbar.password') }}</span>
         </RouterLink>
+        <button type="button" class="dili-nav-item" @click="logout">
+          <LogOut :size="20"></LogOut><span>{{ $t('navbar.logout') }}</span>
+        </button>
       </div>
 
       <div class="dili-sidebar-bottom">
@@ -40,46 +56,6 @@
           </div>
         </div>
         <DiliThemeSwitch></DiliThemeSwitch>
-        <div class="dili-sidebar-tools">
-          <div class="dropdown">
-            <button class="dili-tool dropdown-toggle" type="button" id="navbarUserMenu"
-                    data-bs-toggle="dropdown" aria-expanded="false" aria-label="Menu" title="Menu">
-              <CircleUserRound :size="20"></CircleUserRound>
-              <span>Menu</span>
-            </button>
-            <ul class="dropdown-menu" aria-labelledby="navbarUserMenu">
-              <li>
-                <button type="button" class="dropdown-item d-flex align-items-center" :disabled="restarting" @click="restartDili">
-                  <RotateCw :size="18" class="icon me-2"></RotateCw>
-                  {{ restarting ? 'Restarting…' : 'Restart Dili' }}
-                </button>
-              </li>
-              <li>
-                <button type="button" class="dropdown-item d-flex align-items-center" :disabled="!runningApp" @click="closeApp">
-                  <CircleX :size="18" class="icon me-2"></CircleX>
-                  <span>
-                    Force Close App
-                    <span class="dili-menu-hint">{{ runningApp ? runningApp : 'No app is running' }}</span>
-                  </span>
-                </button>
-              </li>
-              <li><hr class="dropdown-divider"></li>
-              <li>
-                <RouterLink class="dropdown-item d-flex align-items-center" to="/password">
-                  <Shield :size="18" class="icon me-2"></Shield>
-                  {{ $t('navbar.password') }}
-                </RouterLink>
-              </li>
-              <li><hr class="dropdown-divider"></li>
-              <li>
-                <button type="button" class="dropdown-item d-flex align-items-center" @click="logout">
-                  <LogOut :size="18" class="icon me-2"></LogOut>
-                  {{ $t('navbar.logout') }}
-                </button>
-              </li>
-            </ul>
-          </div>
-        </div>
       </div>
     </nav>
     <Notification></Notification>
@@ -311,6 +287,35 @@ body.dili-has-sidebar {
 
 .dili-menu-hint {
   display: block;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+button.dili-nav-item {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.dili-nav-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button.dili-nav-item:disabled:hover {
+  background: transparent;
+}
+
+.dili-nav-two-lines {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.dili-nav-two-lines small {
   font-size: 12px;
   color: var(--color-text-muted);
 }

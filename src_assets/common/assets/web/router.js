@@ -20,7 +20,7 @@ const routes = [
   { path: '/devices', component: () => import('./Devices.vue') },
   { path: '/setup', component: () => import('./Setup.vue') },
   { path: '/pin', redirect: '/devices' },
-  { path: '/troubleshooting', component: () => import('./Troubleshooting.vue') },
+  { path: '/troubleshooting', redirect: '/' },
   { path: '/welcome', component: () => import('./Welcome.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
