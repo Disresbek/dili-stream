@@ -70,6 +70,13 @@ const props = defineProps({
 })
 
 const config = ref(props.config)
+
+// Dili: the Guide button setting as a switch with simple choices
+const guideOn = computed(() => Number(config.value.back_button_timeout) >= 0)
+const guideTooShort = computed(() => guideOn.value && Number(config.value.back_button_timeout) < 300)
+function toggleGuide() {
+  config.value.back_button_timeout = guideOn.value ? -1 : 1000
+}
 const keybindingPairs = ref(parseKeybindings(config.value.keybindings))
 
 const vigembusGamepads = new Set(['auto', 'x360', 'ds4'])
@@ -211,10 +218,29 @@ watch(
 
     <!-- Home/Guide Button Emulation Timeout -->
     <div class="mb-3" v-if="config.controller === 'enabled' && config.gamepad_driver !== 'none'">
-      <label for="back_button_timeout" class="form-label">{{ $t('config.back_button_timeout') }}</label>
-      <input type="text" class="form-control" id="back_button_timeout" placeholder="-1"
-             v-model="config.back_button_timeout" />
-      <div class="form-text">{{ $t('config.back_button_timeout_desc') }}</div>
+      <div class="dili-guide-row">
+        <div>
+          <label for="back_button_timeout" class="form-label">{{ $t('config.back_button_timeout') }}</label>
+          <div class="form-text">For controllers without a Guide (Xbox/Home) button: hold Back/Select to press it.</div>
+        </div>
+        <button type="button" role="switch" class="dili-guide-switch" :class="{ on: guideOn }"
+                :aria-checked="guideOn ? 'true' : 'false'" aria-label="Hold Back for the Guide button" @click="toggleGuide">
+          <span></span>
+        </button>
+      </div>
+      <select v-if="guideOn" id="back_button_timeout" class="form-select dili-guide-select" v-model="config.back_button_timeout">
+        <option :value="500">Hold for half a second</option>
+        <option :value="1000">Hold for 1 second</option>
+        <option :value="1500">Hold for 1.5 seconds</option>
+        <option :value="2000">Hold for 2 seconds</option>
+        <option v-if="![500, 1000, 1500, 2000].includes(Number(config.back_button_timeout))" :value="config.back_button_timeout">
+          {{ config.back_button_timeout }} milliseconds
+        </option>
+      </select>
+      <div v-if="guideTooShort" class="dili-guide-warning">
+        {{ config.back_button_timeout }} milliseconds is so short that almost every press of Back counts as the Guide button.
+        <button type="button" class="dili-guide-fix" @click="config.back_button_timeout = 1000">Use 1 second</button>
+      </div>
     </div>
 
     <!-- Enable Keyboard Input -->
@@ -428,4 +454,69 @@ watch(
     margin-top: 2rem;
   }
 }
+</style>
+
+<style scoped>
+  .dili-guide-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .dili-guide-switch {
+    flex-shrink: 0;
+    width: 50px;
+    height: 30px;
+    border: none;
+    border-radius: 15px;
+    background: var(--color-border-strong);
+    padding: 0;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+
+  .dili-guide-switch span {
+    display: block;
+    width: 26px;
+    height: 26px;
+    margin-left: 2px;
+    border-radius: 13px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    transition: margin-left 0.15s ease;
+  }
+
+  .dili-guide-switch.on {
+    background: var(--color-success);
+  }
+
+  .dili-guide-switch.on span {
+    margin-left: 22px;
+  }
+
+  .dili-guide-select {
+    margin-top: 10px;
+    max-width: 320px;
+  }
+
+  .dili-guide-warning {
+    margin-top: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: var(--color-bg-subtle);
+    font-size: 13px;
+  }
+
+  .dili-guide-fix {
+    margin-left: 6px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
 </style>

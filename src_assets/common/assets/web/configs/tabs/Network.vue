@@ -134,7 +134,7 @@ const effectivePort = computed(() => Number(config.value?.port ?? defaultMoonlig
     <!-- External IP -->
     <div class="mb-3">
       <label for="external_ip" class="form-label">{{ $t('config.external_ip') }}</label>
-      <input type="text" class="form-control" id="external_ip" placeholder="123.456.789.12" v-model="config.external_ip" />
+      <input type="text" class="form-control" id="external_ip" placeholder="Found automatically" v-model="config.external_ip" />
       <div class="form-text">{{ $t('config.external_ip_desc') }}</div>
     </div>
 

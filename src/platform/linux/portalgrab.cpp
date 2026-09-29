@@ -8,6 +8,7 @@
 #include "src/globals.h"
 
 // standard includes
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -2100,6 +2101,73 @@ echo done
     }
     if (!current.is_null()) {
       out["monitors"].push_back(current);
+    }
+    return out;
+  }
+
+  /**
+   * @brief Sound outputs and graphics cards of this PC, so the web UI can offer them as choices.
+   *
+   * @return JSON object: audio_outputs [{name, description}], gpus [{path, name}].
+   */
+  nlohmann::json hardware_info() {
+    using portal::virtual_display::run_host;
+    nlohmann::json out;
+    out["audio_outputs"] = nlohmann::json::array();
+    out["gpus"] = nlohmann::json::array();
+
+    // ---- Sound outputs (PulseAudio / PipeWire) ----
+    {
+      const auto listing = run_host("env LC_ALL=C pactl list sinks");
+      std::istringstream lines(listing);
+      nlohmann::json current;
+      for (std::string line; std::getline(lines, line);) {
+        const auto trimmed = line.substr(std::min(line.find_first_not_of(" \t"), line.size()));
+        if (trimmed.starts_with("Sink #")) {
+          if (current.contains("name")) {
+            out["audio_outputs"].push_back(current);
+          }
+          current = nlohmann::json::object();
+        } else if (trimmed.starts_with("Name: ")) {
+          current["name"] = trimmed.substr(6);
+        } else if (trimmed.starts_with("Description: ")) {
+          current["description"] = trimmed.substr(13);
+        }
+      }
+      if (current.contains("name")) {
+        out["audio_outputs"].push_back(current);
+      }
+    }
+
+    // ---- Graphics cards (render nodes) ----
+    std::error_code ec;
+    std::vector<std::string> nodes;
+    for (const auto &entry : std::filesystem::directory_iterator("/dev/dri", ec)) {
+      const auto file = entry.path().filename().string();
+      if (file.starts_with("renderD")) {
+        nodes.push_back(file);
+      }
+    }
+    std::sort(nodes.begin(), nodes.end());
+    for (const auto &node : nodes) {
+      nlohmann::json gpu;
+      gpu["path"] = "/dev/dri/" + node;
+      std::string name;
+      std::ifstream uevent("/sys/class/drm/" + node + "/device/uevent");
+      for (std::string line; std::getline(uevent, line);) {
+        if (line.starts_with("PCI_SLOT_NAME=")) {
+          // "03:00.0 VGA compatible controller: AMD ... [Radeon RX 9060 XT]" -> the part after the type
+          auto described = run_host("lspci -s " + line.substr(14));
+          if (const auto colon = described.find(": "); colon != std::string::npos) {
+            name = described.substr(colon + 2);
+          }
+          while (!name.empty() && (name.back() == '\n' || name.back() == ' ')) {
+            name.pop_back();
+          }
+        }
+      }
+      gpu["name"] = name.empty() ? "Graphics card (" + node + ")" : name;
+      out["gpus"].push_back(gpu);
     }
     return out;
   }

@@ -14,6 +14,16 @@ const props = defineProps({
 })
 
 const config = ref(props.config)
+
+// Dili: offer the PC's real sound outputs instead of asking for a device name
+const audioOutputs = ref([])
+fetch('./api/hardware')
+  .then((r) => r.json())
+  .then((h) => {
+    // Leave out Dili's own virtual output that exists while streaming
+    audioOutputs.value = (h.audio_outputs || []).filter((o) => !String(o.name).startsWith('sink-sunshine'))
+  })
+  .catch(() => {})
 </script>
 
 <template>
@@ -21,7 +31,14 @@ const config = ref(props.config)
     <!-- Audio Sink -->
     <div class="mb-3">
       <label for="audio_sink" class="form-label">{{ $t('config.audio_sink') }}</label>
-      <input type="text" class="form-control" id="audio_sink"
+      <select v-if="platform === 'linux' && audioOutputs.length" id="audio_sink" class="form-select" v-model="config.audio_sink">
+        <option value="">Automatic (what you normally hear)</option>
+        <option v-for="o in audioOutputs" :key="o.name" :value="o.name">{{ o.description || o.name }}</option>
+        <option v-if="config.audio_sink && !audioOutputs.some((o) => o.name === config.audio_sink)" :value="config.audio_sink">
+          {{ config.audio_sink }} (not found right now)
+        </option>
+      </select>
+      <input v-else type="text" class="form-control" id="audio_sink"
              :placeholder="$tp('config.audio_sink_placeholder', 'alsa_output.pci-0000_09_00.3.analog-stereo')"
              v-model="config.audio_sink" />
       <div class="form-text">
@@ -34,10 +51,7 @@ const config = ref(props.config)
             <pre>pacmd list-sinks | grep "name:"</pre>
             <pre>pactl info | grep Source</pre>
           </template>
-          <template #linux>
-            <pre>pacmd list-sinks | grep "name:"</pre>
-            <pre>pactl info | grep Source</pre>
-          </template>
+          <template #linux></template>
           <template #macos>
             <a href="https://github.com/mattingalls/Soundflower" target="_blank">Soundflower</a><br>
             <a href="https://github.com/ExistentialAudio/BlackHole" target="_blank">BlackHole</a>.

@@ -59,16 +59,6 @@
             </button>
           </template>
 
-          <div class="config-actions">
-            <button class="btn btn-primary" @click="save">
-              <save :size="18" class="icon"></save>
-              {{ $t('_common.save') }}
-            </button>
-            <button class="btn btn-success" @click="apply" v-if="saved && !restarted">
-              <check :size="18" class="icon"></check>
-              {{ $t('_common.apply') }}
-            </button>
-          </div>
         </nav>
 
         <!-- Tab content -->
@@ -137,6 +127,12 @@
       </div>
     </div>
 
+    <!-- Appears only when something changed -->
+    <div v-if="dirty || applying" class="dili-save-bar" role="region" aria-label="Unsaved changes">
+      <span>{{ applying ? 'Saving and restarting Dili…' : 'You have unsaved changes.' }}</span>
+      <button type="button" class="dili-bar-btn" :disabled="applying" @click="discardChanges">Discard</button>
+      <button type="button" class="dili-bar-btn primary" :disabled="applying" @click="saveAndApply">Save &amp; Apply</button>
+    </div>
   </div>
 </template>
 
@@ -254,6 +250,9 @@
         currentTab: "general",
         searchQuery: "",
         showAllEncoders: false,
+        snapshot: "",
+        dirty: false,
+        applying: false,
         activeEncoder: "",
         hashChangeHandler: null,
         // Keep a private copy because platform filtering replaces this array at runtime.
@@ -322,6 +321,16 @@
         );
       }
     },
+    watch: {
+      config: {
+        deep: true,
+        handler() {
+          if (this.snapshot) {
+            this.dirty = JSON.stringify(this.serialize()) !== this.snapshot;
+          }
+        },
+      },
+    },
     created() {
       fetch("./api/status").then((r) => r.json()).then((st) => { this.activeEncoder = st.encoder || ""; }).catch(() => {});
       fetch("./api/config")
@@ -329,6 +338,11 @@
         .then((r) => {
           this.config = r;
           this.platform = this.config.platform;
+          // Remember what is saved, to know when something changed
+          setTimeout(() => {
+            this.snapshot = JSON.stringify(this.serialize());
+            this.dirty = false;
+          }, 300);
 
           if (this.platform === "windows") {
             this.tabs = this.tabs.filter((el) => {
@@ -429,6 +443,22 @@
             return false
           }
         });
+      },
+      discardChanges() {
+        window.location.reload();
+      },
+      async saveAndApply() {
+        this.applying = true;
+        const ok = await this.save();
+        if (ok === true) {
+          this.snapshot = JSON.stringify(this.serialize());
+          this.dirty = false;
+          this.restarted = true;
+          apiFetch("./api/restart", { method: "POST", headers: { "Content-Type": "application/json" } });
+          setTimeout(() => window.location.reload(), 8000);
+        } else {
+          this.applying = false;
+        }
       },
       apply() {
         this.saved = this.restarted = false;
@@ -681,5 +711,50 @@
 
   .dili-encoder-note span {
     color: var(--color-text-muted);
+  }
+  .dili-save-bar {
+    position: fixed;
+    left: calc(272px + (100vw - 272px) / 2);
+    transform: translateX(-50%);
+    bottom: 20px;
+    z-index: 1500;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px 10px 20px;
+    border-radius: 16px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  @media (max-width: 900px) {
+    .dili-save-bar {
+      left: 50%;
+    }
+  }
+
+  .dili-bar-btn {
+    height: 38px;
+    padding: 0 16px;
+    border-radius: 19px;
+    border: 1px solid var(--color-border-strong);
+    background: transparent;
+    color: var(--color-text-base);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .dili-bar-btn.primary {
+    border: none;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+  }
+
+  .dili-bar-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
 </style>

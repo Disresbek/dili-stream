@@ -78,6 +78,7 @@ namespace platf {
   nlohmann::json installed_apps();
   nlohmann::json test_app_command(const std::string &command);
   nlohmann::json ddc_monitors();
+  nlohmann::json hardware_info();
 }  // namespace platf
 #endif
 
@@ -1566,6 +1567,29 @@ namespace confighttp {
   }
 
   /**
+   * @brief Get the sound outputs and graphics cards of this PC, for choices in Advanced.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/hardware|:| GET|:| null}
+   */
+  void getHardware(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    print_req(request);
+
+#ifdef SUNSHINE_BUILD_PORTAL
+    nlohmann::json output_tree = platf::hardware_info();
+#else
+    nlohmann::json output_tree {{"audio_outputs", nlohmann::json::array()}, {"gpus", nlohmann::json::array()}};
+#endif
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
    * @brief Get the monitors that Dili can switch off while streaming.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2786,6 +2810,7 @@ namespace confighttp {
     server.resource["^/api/apps/test$"]["POST"] = testAppCommand;
     server.resource["^/api/installed$"]["GET"] = getInstalled;
     server.resource["^/api/monitors$"]["GET"] = getMonitors;
+    server.resource["^/api/hardware$"]["GET"] = getHardware;
     server.resource["^/api/clients/list$"]["GET"] = getClients;
     server.resource["^/api/clients/unpair$"]["POST"] = unpair;
     server.resource["^/api/clients/unpair-all$"]["POST"] = unpairAll;
