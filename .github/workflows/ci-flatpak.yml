@@ -218,7 +218,7 @@ jobs:
             --force-clean \
             --repo=repo \
             --sandbox \
-            --stop-at=ffmpeg build-sunshine ${APP_ID}.yml"
+            --stop-at=ffmpeg-prebuilt build-sunshine ${APP_ID}.yml"
           cp -r .flatpak-builder copy-of-flatpak-builder
           sudo su "$(whoami)" -c "flatpak run org.flatpak.Builder \
             --arch=${MATRIX_ARCH} \
