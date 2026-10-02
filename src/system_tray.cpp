@@ -9,6 +9,7 @@
    * @def TRAY_ICON
    * @brief Path to the default system tray icon.
    */
+  #define TRAY_APP_NAME "Dili"
   #define TRAY_ICON WEB_DIR "images/logo-sunshine.svg"
   /**
    * @def TRAY_ICON_PLAYING
@@ -293,11 +294,11 @@ namespace system_tray {
   // Tray menu
   static struct tray tray = {
     .icon = TRAY_ICON,
-    .tooltip = PROJECT_NAME,
+    .tooltip = TRAY_APP_NAME,
     .menu =
       (struct tray_menu[]) {
         // Tray menu labels currently use the project's English source strings.
-        {.text = "Open Sunshine", .cb = tray_open_ui_cb},
+        {.text = "Open Dili", .cb = tray_open_ui_cb},
         {.text = "-"},
   #if defined(_WIN32) || defined(__APPLE__)
         {.text = "Virtual HID Broker", .submenu = virtualhid_license_menu.data()},
@@ -341,7 +342,7 @@ namespace system_tray {
   void reset_tray_data_for_testing() {
     const std::scoped_lock lock(tray_state_mutex());
     tray.icon = tray.allIconPaths[0];
-    tray.tooltip = PROJECT_NAME;
+    tray.tooltip = TRAY_APP_NAME;
     tray.notification_icon = nullptr;
     tray.notification_text = nullptr;
     tray.notification_title = nullptr;
@@ -785,7 +786,7 @@ namespace system_tray {
 
     tray_set_log_callback(qt_log_to_boost);
 
-    tray_set_app_info(PROJECT_NAME, PROJECT_NAME, PROJECT_FQDN);
+    tray_set_app_info(TRAY_APP_NAME, TRAY_APP_NAME, PROJECT_FQDN);
 
     {
       const std::scoped_lock lock(tray_state_mutex());
@@ -897,7 +898,7 @@ namespace system_tray {
     tray.notification_icon = tray.allIconPaths[0];
     tray.notification_title = "Application Stopped";
     tray.notification_text = msg.c_str();
-    tray.tooltip = PROJECT_NAME;
+    tray.tooltip = TRAY_APP_NAME;
     tray_update(&tray);
   }
 
@@ -917,7 +918,7 @@ namespace system_tray {
     tray.notification_title = "Incoming Pairing Request";
     tray.notification_text = "Click here to complete the pairing process";
     tray.notification_icon = tray.allIconPaths[1];
-    tray.tooltip = PROJECT_NAME;
+    tray.tooltip = TRAY_APP_NAME;
     tray.notification_cb = []() {
       launch_ui("/pin");
     };
