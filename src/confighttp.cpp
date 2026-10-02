@@ -80,6 +80,7 @@ namespace platf {
   nlohmann::json ddc_monitors();
   nlohmann::json hardware_info();
   bool open_settings_folder();
+  bool restore_monitors_now();
 }  // namespace platf
 #endif
 
@@ -1568,6 +1569,34 @@ namespace confighttp {
   }
 
   /**
+   * @brief Switch the monitors back on right now, if Dili switched them off for a stream.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/monitors/restore|:| POST|:| null}
+   */
+  void restoreMonitors(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+    std::string client_id = get_client_id(request);
+    if (!validate_csrf_token(response, request, client_id)) {
+      return;
+    }
+
+    print_req(request);
+
+#ifdef SUNSHINE_BUILD_PORTAL
+    const bool ok = platf::restore_monitors_now();
+#else
+    const bool ok = false;
+#endif
+    nlohmann::json output_tree;
+    output_tree["status"] = ok;
+    send_response(response, output_tree);
+  }
+
+  /**
    * @brief Get the folder where Dili keeps its settings, apps and logs.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2860,6 +2889,7 @@ namespace confighttp {
     server.resource["^/api/installed$"]["GET"] = getInstalled;
     server.resource["^/api/monitors$"]["GET"] = getMonitors;
     server.resource["^/api/hardware$"]["GET"] = getHardware;
+    server.resource["^/api/monitors/restore$"]["POST"] = restoreMonitors;
     server.resource["^/api/paths$"]["GET"] = getPaths;
     server.resource["^/api/open-folder$"]["POST"] = openFolder;
     server.resource["^/api/clients/list$"]["GET"] = getClients;

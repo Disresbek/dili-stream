@@ -106,14 +106,16 @@
               <div class="dili-row-text">
                 The streamed screen becomes your main screen, so games and the taskbar appear on your device.
                 Your monitor gets it back when the stream ends.
+                <template v-if="onlyOn"> Always on while only the streamed screen is used.</template>
               </div>
             </div>
             <button
               type="button"
               class="dili-switch"
-              :class="{ on: primaryOn }"
-              :aria-pressed="primaryOn ? 'true' : 'false'"
+              :class="{ on: primaryOn || onlyOn }"
+              :aria-pressed="primaryOn || onlyOn ? 'true' : 'false'"
               aria-label="Show the taskbar on the streamed screen"
+              :disabled="onlyOn"
               @click="togglePrimary"
             >
               <span></span>
@@ -122,9 +124,36 @@
           <div class="dili-divider"></div>
           <div class="dili-row">
             <div>
-              <div class="dili-row-title">Turn off my monitors</div>
-              <div class="dili-row-text" v-if="monitors.available && monitors.monitors.length">
-                Your monitors switch off when a stream starts, and back on when it ends.
+              <div class="dili-row-title">Use only the streamed screen</div>
+              <div class="dili-row-text">
+                KDE switches your monitors off while you stream, so the mouse pointer and windows can only be on your
+                device. They come back in their old places when the stream ends.
+              </div>
+              <button v-if="onlyOn" type="button" class="dili-text-link" :disabled="restoringMonitors" @click="restoreMonitors">
+                {{ restoringMonitors ? 'Switching on…' : (restoredMessage || 'Monitors stay dark? Bring them back now') }}
+              </button>
+            </div>
+            <button
+              type="button"
+              class="dili-switch"
+              :class="{ on: onlyOn }"
+              :aria-pressed="onlyOn ? 'true' : 'false'"
+              aria-label="Use only the streamed screen"
+              @click="toggleOnly"
+            >
+              <span></span>
+            </button>
+          </div>
+          <div class="dili-divider"></div>
+          <div class="dili-row">
+            <div>
+              <div class="dili-row-title">Put my monitors to sleep</div>
+              <div class="dili-row-text" v-if="onlyOn">
+                Not needed while only the streamed screen is used: your monitors go to sleep by themselves when KDE stops using them.
+              </div>
+              <div class="dili-row-text" v-else-if="monitors.available && monitors.monitors.length">
+                Puts your monitors to sleep with their own power control when a stream starts, and wakes them when it ends.
+                KDE still counts them as screens, so the pointer can slide onto them.
                 Found: {{ monitors.monitors.map((m) => m.model || 'Monitor ' + m.number).join(', ') }}.
               </div>
               <div class="dili-row-text" v-else-if="monitors.available">
@@ -141,7 +170,7 @@
               :class="{ on: monitorsOffOn }"
               :aria-pressed="monitorsOffOn ? 'true' : 'false'"
               aria-label="Turn off my monitors"
-              :disabled="!monitorsOffOn && !(monitors.available && monitors.monitors.length)"
+              :disabled="onlyOn || (!monitorsOffOn && !(monitors.available && monitors.monitors.length))"
               @click="toggleMonitorsOff"
             >
               <span></span>
@@ -232,6 +261,8 @@
     },
     data() {
       return {
+        restoringMonitors: false,
+        restoredMessage: '',
         portalBusy: false,
         portalConfirm: false,
         portalMessage: '',
@@ -271,6 +302,10 @@
       },
       isVirtual() {
         return this.config.output_name === 'virtual';
+      },
+      onlyOn() {
+        const v = String(this.config.virtual_display_only || '').toLowerCase();
+        return v === 'enabled' || v === 'true' || v === 'on' || v === 'yes' || v === '1';
       },
       primaryOn() {
         const v = String(this.config.virtual_display_primary || '').toLowerCase();
@@ -356,6 +391,29 @@
         this.config.output_name = name;
         this.dirty = true;
         this.saved = false;
+      },
+      toggleOnly() {
+        const turnOn = !this.onlyOn;
+        this.config.virtual_display_only = turnOn ? 'enabled' : 'disabled';
+        if (turnOn) {
+          // The streamed screen must be the main screen, and putting monitors to sleep is no longer needed
+          this.config.virtual_display_primary = 'enabled';
+          this.config.global_prep_cmd = JSON.stringify(this.prepList.filter((p) => !isMonitorOff(p)));
+        }
+        this.dirty = true;
+        this.saved = false;
+      },
+      async restoreMonitors() {
+        this.restoringMonitors = true;
+        try {
+          await apiFetch('./api/monitors/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+          this.restoredMessage = 'Done. Your monitors are switched on again.';
+        } catch (e) {
+          this.restoredMessage = 'That did not work. Please try again.';
+        } finally {
+          this.restoringMonitors = false;
+          setTimeout(() => (this.restoredMessage = ''), 6000);
+        }
       },
       togglePrimary() {
         this.config.virtual_display_primary = this.primaryOn ? 'disabled' : 'enabled';
@@ -607,5 +665,16 @@
   .dili-bad-text {
     color: var(--color-danger);
     margin-top: 4px;
+  }
+  .dili-text-link {
+    border: none;
+    background: none;
+    padding: 0;
+    margin-top: 6px;
+    color: var(--color-primary);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
   }
 </style>

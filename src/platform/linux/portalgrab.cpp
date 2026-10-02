@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <optional>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <sstream>
@@ -25,6 +26,10 @@
 
 // lib includes
 #include <nlohmann/json.hpp>
+
+namespace rtsp_stream {
+  int session_count();
+}  // namespace rtsp_stream
 
 namespace {
   // Portal configuration constants
@@ -84,6 +89,10 @@ namespace portal {
       int priority = 0;  ///< 1 = main screen.
       std::string current_mode;  ///< Active mode id.
       std::vector<display_mode_t> modes;  ///< Available modes.
+      bool enabled = true;  ///< Whether KDE currently uses this screen.
+      int pos_x = 0;  ///< Position of the screen in KDE's layout.
+      int pos_y = 0;  ///< Position of the screen in KDE's layout.
+      double scale = 1.0;  ///< Display scale factor.
 
       /**
        * @brief How to address this output in a kscreen-doctor command.
@@ -334,6 +343,12 @@ onScreensChanged();
           out.uuid = o.value("uuid", "");
           out.rotation = o.value("rotation", 1);
           out.priority = o.value("priority", 0);
+          out.enabled = o.value("enabled", true);
+          out.scale = o.value("scale", 1.0);
+          if (o.contains("pos") && o.at("pos").is_object()) {
+            out.pos_x = o.at("pos").value("x", 0);
+            out.pos_y = o.at("pos").value("y", 0);
+          }
           if (o.contains("currentModeId")) {
             const auto &cm = o.at("currentModeId");
             out.current_mode = cm.is_string() ? cm.get<std::string>() : cm.dump();
@@ -391,6 +406,18 @@ onScreensChanged();
     /**
      * @brief State needed to undo our changes when the stream ends.
      */
+    /**
+     * @brief A physical screen that was switched off for a stream, with everything needed to bring it back.
+     */
+    struct saved_output_t {
+      std::string selector;  ///< How to address the screen in kscreen-doctor.
+      int x = 0;  ///< Position in KDE's layout.
+      int y = 0;  ///< Position in KDE's layout.
+      double scale = 1.0;  ///< Display scale factor.
+      int rotation = 1;  ///< kscreen rotation: 1 normal, 2 left, 4 inverted, 8 right.
+      std::string mode;  ///< Mode id that was active.
+    };
+
     struct session_t {
       std::string output;  ///< Selector of our virtual output.
       std::string previous_primary;  ///< Selector of the output that was the main screen before.
@@ -398,7 +425,139 @@ onScreensChanged();
       int height = 0;  ///< Final height.
       bool made_primary = false;  ///< Whether we made the virtual screen the main screen.
       double hz = 0;  ///< Final refresh rate.
+      std::vector<saved_output_t> disabled;  ///< Physical screens switched off for this stream.
     };
+
+    inline std::filesystem::path outputs_state_path() {
+      const char *home = std::getenv("HOME");
+      return std::filesystem::path(home ? home : "/tmp") / ".local/share/sunshine/virtual_display_outputs.json";
+    }
+
+    /**
+     * @brief Remember which screens were switched off, so they can be brought back even after a crash.
+     */
+    inline void save_outputs_state(const std::vector<saved_output_t> &list) {
+      nlohmann::json j = nlohmann::json::array();
+      for (const auto &o : list) {
+        j.push_back({{"selector", o.selector}, {"x", o.x}, {"y", o.y}, {"scale", o.scale}, {"rotation", o.rotation}, {"mode", o.mode}});
+      }
+      std::error_code ec;
+      std::filesystem::create_directories(outputs_state_path().parent_path(), ec);
+      std::ofstream file(outputs_state_path());
+      file << j.dump(2);
+    }
+
+    inline std::vector<saved_output_t> load_outputs_state() {
+      std::vector<saved_output_t> list;
+      std::ifstream file(outputs_state_path());
+      if (!file) {
+        return list;
+      }
+      try {
+        const auto j = nlohmann::json::parse(file);
+        for (const auto &o : j) {
+          saved_output_t out;
+          out.selector = o.value("selector", "");
+          out.x = o.value("x", 0);
+          out.y = o.value("y", 0);
+          out.scale = o.value("scale", 1.0);
+          out.rotation = o.value("rotation", 1);
+          out.mode = o.value("mode", "");
+          if (!out.selector.empty()) {
+            list.push_back(out);
+          }
+        }
+      } catch (const std::exception &) {
+      }
+      return list;
+    }
+
+    inline void clear_outputs_state() {
+      std::error_code ec;
+      std::filesystem::remove(outputs_state_path(), ec);
+    }
+
+    inline const char *rotation_name(int rotation) {
+      switch (rotation) {
+        case 2:
+          return "left";
+        case 4:
+          return "inverted";
+        case 8:
+          return "right";
+        default:
+          return "normal";
+      }
+    }
+
+    /**
+     * @brief Switch screens back on and put them exactly where they were.
+     */
+    inline void restore_outputs(const std::vector<saved_output_t> &saved) {
+      if (saved.empty()) {
+        return;
+      }
+      for (const auto &o : saved) {
+        kscreen(std::format("output.{}.enable", o.selector));
+        std::this_thread::sleep_for(300ms);
+      }
+      // Wait until KDE reports them as active again
+      std::vector<output_t> now;
+      for (int attempt = 0; attempt < 30; ++attempt) {
+        now = read_outputs();
+        bool all_back = true;
+        for (const auto &o : saved) {
+          bool found = false;
+          for (const auto &n : now) {
+            if (n.selector() == o.selector && n.enabled) {
+              found = true;
+            }
+          }
+          all_back = all_back && found;
+        }
+        if (all_back) {
+          break;
+        }
+        std::this_thread::sleep_for(100ms);
+      }
+      for (const auto &o : saved) {
+        kscreen(std::format("output.{}.position.{},{}", o.selector, o.x, o.y));
+        kscreen(std::format("output.{}.rotation.{}", o.selector, rotation_name(o.rotation)));
+        if (o.scale > 0) {
+          kscreen(std::format("output.{}.scale.{}", o.selector, o.scale));
+        }
+        for (const auto &n : now) {
+          if (n.selector() == o.selector && !o.mode.empty() && n.current_mode != o.mode) {
+            kscreen(std::format("output.{}.mode.{}", o.selector, o.mode));
+          }
+        }
+      }
+      BOOST_LOG(info) << "[virtual_display] Monitors switched on again"sv;
+    }
+
+    /**
+     * @brief Bring back screens that an earlier run switched off and never restored (for example after a crash).
+     */
+    inline void recover_outputs() {
+      auto saved = load_outputs_state();
+      if (saved.empty()) {
+        return;
+      }
+      std::vector<saved_output_t> still_off;
+      const auto now = read_outputs();
+      for (const auto &o : saved) {
+        for (const auto &n : now) {
+          if (n.selector() == o.selector && !n.enabled) {
+            still_off.push_back(o);
+          }
+        }
+      }
+      if (!still_off.empty()) {
+        BOOST_LOG(warning) << "[virtual_display] Monitors were left switched off by an earlier stream, switching them on again"sv;
+        restore_outputs(still_off);
+      }
+      clear_outputs_state();
+    }
 
     /**
      * @brief Find the new virtual output and switch it to the client's mode.
@@ -483,7 +642,7 @@ onScreensChanged();
         }
       }
 
-      if (config::video.virtual_display_primary) {
+      if (config::video.virtual_display_primary || config::video.virtual_display_only) {
         // Setting on: make it the main screen so games and new windows open there
         if (target->priority != 1) {
           kscreen(std::format("output.{}.priority.1", id));
@@ -496,6 +655,34 @@ onScreensChanged();
         BOOST_LOG(info) << "[virtual_display] Keeping '"sv << previous_primary << "' as the main screen"sv;
       }
 
+      // "Only the streamed screen": switch the physical screens off in KDE, so the pointer and windows
+      // cannot end up on a dark monitor. Only for a real stream, never while Dili tests encoders at startup.
+      if (config::video.virtual_display_only) {
+        if (rtsp_stream::session_count() <= 0) {
+          BOOST_LOG(debug) << "[virtual_display] No device is streaming yet, monitors stay on for now"sv;
+        } else {
+          std::vector<saved_output_t> switched_off;
+          for (const auto &o : read_outputs()) {
+            if (o.name.starts_with("Virtual-") || !o.enabled) {
+              continue;
+            }
+            switched_off.push_back({o.selector(), o.pos_x, o.pos_y, o.scale, o.rotation, o.current_mode});
+          }
+          if (!switched_off.empty()) {
+            // Write the way back first: if anything goes wrong from here on, Dili can undo it at the next start
+            auto everything = load_outputs_state();
+            everything.insert(everything.end(), switched_off.begin(), switched_off.end());
+            save_outputs_state(everything);
+            for (const auto &o : switched_off) {
+              kscreen(std::format("output.{}.disable", o.selector));
+              std::this_thread::sleep_for(400ms);
+            }
+            session.disabled = switched_off;
+            BOOST_LOG(info) << "[virtual_display] Monitors switched off for this stream: "sv << switched_off.size();
+          }
+        }
+      }
+
       // Give KWin a moment to settle before PipeWire negotiates the stream
       std::this_thread::sleep_for(300ms);
       return session;
@@ -505,6 +692,11 @@ onScreensChanged();
      * @brief Give the main screen back to the monitor that had it before.
      */
     inline void restore(const session_t &session) {
+      // Monitors come back first: KDE must never be left without a real screen
+      if (!session.disabled.empty()) {
+        restore_outputs(session.disabled);
+        clear_outputs_state();
+      }
       if (session.made_primary && !session.previous_primary.empty() && session.previous_primary != session.output) {
         kscreen(std::format("output.{}.priority.1", session.previous_primary));
         BOOST_LOG(info) << "[virtual_display] Main screen restored"sv;
@@ -1435,6 +1627,11 @@ onScreensChanged();
   inline std::shared_ptr<dbus_t> acquire_virtual_session() {
     auto &sv = shared_virtual();
     std::lock_guard lock(sv.mutex);
+    // First use since Dili started: bring back monitors an earlier run may have left switched off
+    static std::once_flag recovered;
+    std::call_once(recovered, []() {
+      virtual_display::recover_outputs();
+    });
     if (sv.dbus && !sv.dbus->is_session_closed()) {
       if (sv.dbus->reopen_pipewire_remote() < 0) {
         return nullptr;
@@ -1563,6 +1760,9 @@ onScreensChanged();
           // Keep the original main screen across reuses, so it is restored correctly at the end
           if (shared && vd->previous_primary.empty()) {
             vd->previous_primary = shared->previous_primary;
+          }
+          if (shared && vd->disabled.empty()) {
+            vd->disabled = shared->disabled;  // screens switched off earlier in this stream
           }
           shared = vd;
           if (!shared_virtual().script_loaded) {
@@ -2189,6 +2389,23 @@ echo done
    */
   void dili_run_detached(const std::string &command) {
     portal::virtual_display::run_host("setsid -f " + command + " >/dev/null 2>&1 </dev/null");
+  }
+
+  /**
+   * @brief Bring back switched-off monitors right now (emergency button on the Display & Quality page).
+   */
+  bool restore_monitors_now() {
+    {
+      auto &sv = portal::shared_virtual();
+      std::lock_guard lock(sv.mutex);
+      if (sv.vd) {
+        sv.vd->disabled.clear();
+      }
+    }
+    auto saved = portal::virtual_display::load_outputs_state();
+    portal::virtual_display::restore_outputs(saved);
+    portal::virtual_display::clear_outputs_state();
+    return true;
   }
 
   /**

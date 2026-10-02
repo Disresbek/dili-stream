@@ -1240,6 +1240,32 @@ supported on the current platform.
     </tr>
 </table>
 
+### virtual_display_only
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            While streaming to a virtual screen (`output_name = virtual`), switch the physical screens off in KDE,
+            so the virtual screen is the only active one. The mouse pointer and windows cannot end up on a dark monitor.
+            The screens are switched on again, in their old positions, when the stream ends.
+            @note{This option is only supported on Linux with KDE Plasma.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            disabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            virtual_display_only = enabled
+            @endcode</td>
+    </tr>
+</table>
+
 ### dd_configuration_option
 
 <table>
